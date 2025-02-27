@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["sys_uname"],"struct":["UtsName"]};

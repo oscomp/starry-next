@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_HEAP_SIZE"],"fn":["sys_brk"]};
