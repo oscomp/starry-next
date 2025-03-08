@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["handle_syscall","read_path_str"],"mod":["fs","mm","signal","sys","task","utils"],"static":["_LINKME_ELEMENT_handle_syscall"]};
