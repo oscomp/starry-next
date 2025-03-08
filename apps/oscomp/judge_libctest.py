@@ -1,7 +1,7 @@
 import json
 import sys
 
-# TODO: Add more commands to test here
+# Add more commands to test here
 libctest_baseline = """"""
 
 def parse_libctest(output):
