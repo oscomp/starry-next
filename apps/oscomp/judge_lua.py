@@ -2,7 +2,7 @@ import json
 import re
 import sys
 
-# Add more commands to test here
+# TODO: Add more commands to test here
 cmds = """"""
 
 serial_out = sys.stdin.read()

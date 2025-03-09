@@ -31,6 +31,7 @@ if [ "$LIBC" != "musl" ] && [ "$LIBC" != "glibc" ]; then
     exit $S_FAILED
 fi
 
+# TODO: add more basic testcases
 basic_testlist=(
     "/$LIBC/basic/brk"
     "/$LIBC/basic/chdir"
