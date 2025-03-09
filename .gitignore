@@ -9,3 +9,5 @@ apps/*/build/
 **/Cargo.lock
 !/vendor/**/Cargo.lock
 /.axconfig.*
+/*.img
+/*.sh
