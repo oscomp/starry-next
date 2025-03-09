@@ -71,10 +71,11 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
 /// A trait representing a pointer in user space, which can be converted to a
 /// pointer in kernel space through a series of checks.
 ///
-/// Converting a `PtrWrapper<T>` to `*T` is done by `PtrWrapper::get` (or
+/// Converting a `PtrWrapper` to a raw pointer is done by `PtrWrapper::get` (or
 /// `get_as_*`). It checks whether the pointer along with its layout is valid in
 /// the current task's address space, and raises EFAULT if not.
-pub trait PtrWrapper<T>: Sized {
+pub trait PtrWrapper: Sized {
+    type Target;
     type Ptr;
 
     const ACCESS_FLAGS: MappingFlags;
@@ -88,38 +89,28 @@ pub trait PtrWrapper<T>: Sized {
     /// Get the address of the pointer.
     fn address(&self) -> VirtAddr;
 
-    /// Get the pointer as a raw pointer to `T`.
-    fn get(self) -> LinuxResult<Self::Ptr> {
-        self.get_as(Layout::new::<T>())
-    }
-
-    /// Get the pointer as a raw pointer to `T`, validating the memory
+    /// Get the pointer as a raw pointer, validating the memory
     /// region given by the layout.
     fn get_as(self, layout: Layout) -> LinuxResult<Self::Ptr> {
         check_region(self.address(), layout, Self::ACCESS_FLAGS)?;
         unsafe { Ok(self.into_inner()) }
     }
 
-    /// Get the pointer as a raw pointer to `T`, validating the memory
-    /// region specified by the size.
-    fn get_as_bytes(self, size: usize) -> LinuxResult<Self::Ptr> {
-        check_region(
-            self.address(),
-            Layout::from_size_align(size, 1).unwrap(),
-            Self::ACCESS_FLAGS,
-        )?;
-        unsafe { Ok(self.into_inner()) }
+    /// Get the pointer as a raw pointer.
+    fn get(self) -> LinuxResult<Self::Ptr> {
+        self.get_as(Layout::new::<Self::Target>())
     }
 
-    /// Get the pointer as a raw pointer to `T`, validating the memory
+    /// Get the pointer as a raw pointer, validating the memory
+    /// region specified by the size.
+    fn get_as_bytes(self, size: usize) -> LinuxResult<Self::Ptr> {
+        self.get_as(Layout::from_size_align(size, 1).unwrap())
+    }
+
+    /// Get the pointer as a raw pointer, validating the memory
     /// region given by the layout of `[T; len]`.
     fn get_as_array(self, len: usize) -> LinuxResult<Self::Ptr> {
-        check_region(
-            self.address(),
-            Layout::array::<T>(len).unwrap(),
-            Self::ACCESS_FLAGS,
-        )?;
-        unsafe { Ok(self.into_inner()) }
+        self.get_as(Layout::array::<Self::Target>(len).unwrap())
     }
 
     /// Get the pointer as `&CStr`, validating the memory region specified by
@@ -141,7 +132,8 @@ impl<T> From<usize> for UserPtr<T> {
     }
 }
 
-impl<T> PtrWrapper<T> for UserPtr<T> {
+impl<T> PtrWrapper for UserPtr<T> {
+    type Target = T;
     type Ptr = *mut T;
 
     const ACCESS_FLAGS: MappingFlags = MappingFlags::READ.union(MappingFlags::WRITE);
@@ -167,7 +159,8 @@ impl<T> From<usize> for UserConstPtr<T> {
     }
 }
 
-impl<T> PtrWrapper<T> for UserConstPtr<T> {
+impl<T> PtrWrapper for UserConstPtr<T> {
+    type Target = T;
     type Ptr = *const T;
 
     const ACCESS_FLAGS: MappingFlags = MappingFlags::READ;
@@ -178,5 +171,43 @@ impl<T> PtrWrapper<T> for UserConstPtr<T> {
 
     fn address(&self) -> VirtAddr {
         VirtAddr::from_ptr_of(self.0)
+    }
+}
+
+/// A wrapper around a [`PtrWrapper`] that allows it to be nullable.
+#[repr(transparent)]
+pub struct Nullable<P>(P);
+
+impl<P> From<usize> for Nullable<P>
+where
+    P: From<usize>,
+{
+    fn from(value: usize) -> Self {
+        Nullable(P::from(value))
+    }
+}
+
+impl<P> PtrWrapper for Nullable<P>
+where
+    P: PtrWrapper,
+{
+    type Target = P::Target;
+    type Ptr = P::Ptr;
+
+    const ACCESS_FLAGS: MappingFlags = P::ACCESS_FLAGS;
+
+    unsafe fn into_inner(self) -> Self::Ptr {
+        unsafe { self.0.into_inner() }
+    }
+
+    fn address(&self) -> VirtAddr {
+        self.0.address()
+    }
+
+    fn get_as(self, layout: Layout) -> LinuxResult<Self::Ptr> {
+        if self.0.address().as_usize() == 0 {
+            return Ok(unsafe { self.0.into_inner() });
+        }
+        self.0.get_as(layout)
     }
 }

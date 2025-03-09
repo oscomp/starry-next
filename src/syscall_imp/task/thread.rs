@@ -6,7 +6,7 @@ use num_enum::TryFromPrimitive;
 
 use crate::{
     ctypes::{WaitFlags, WaitStatus},
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
+    ptr::{Nullable, PtrWrapper, UserConstPtr, UserPtr},
     syscall_body,
     syscall_imp::read_path_str,
     task::wait_pid,
@@ -141,7 +141,7 @@ pub(crate) fn sys_clone(
     })
 }
 
-pub(crate) fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> isize {
+pub(crate) fn sys_wait4(pid: i32, exit_code_ptr: Nullable<UserPtr<i32>>, option: u32) -> isize {
     let option_flag = WaitFlags::from_bits(option).unwrap();
     syscall_body!(sys_wait4, {
         let exit_code_ptr = exit_code_ptr.get()?;
