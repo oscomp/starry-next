@@ -1,7 +1,7 @@
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::{MappingFlags, PageTable};
 use axtask::{TaskExtRef, current};
-use memory_addr::{MemoryAddr, PAGE_SIZE_4K, PageIter4K, VirtAddr};
+use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
 
 use core::{alloc::Layout, ffi::CStr, slice};
 
@@ -21,16 +21,14 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
         return Err(LinuxError::EFAULT);
     }
 
-    // TODO: currently we're doing a very basic and inefficient check, due to
-    // the fact that AddrSpace does not expose necessary API.
     let task = current();
     let aspace = task.task_ext().aspace.lock();
-    let pt = aspace.page_table();
 
-    let page_start = start.align_down_4k();
-    let page_end = (start + layout.size()).align_up_4k();
-    for page in PageIter4K::new(page_start, page_end).unwrap() {
-        check_page(pt, page, access_flags)?;
+    if !aspace.check_region_access(
+        VirtAddrRange::from_start_size(start, layout.size()),
+        access_flags,
+    ) {
+        return Err(LinuxError::EFAULT);
     }
 
     Ok(())
@@ -40,11 +38,8 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
     // TODO: see check_region
     let task = current();
     let aspace = task.task_ext().aspace.lock();
-    let pt = aspace.page_table();
 
     let mut page = start.align_down_4k();
-    check_page(pt, page, access_flags)?;
-    page += PAGE_SIZE_4K;
 
     let start: *const u8 = start.as_ptr();
     let mut len = 0;
@@ -52,8 +47,13 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
     loop {
         // SAFETY: Outer caller has provided a pointer to a valid C string.
         let ptr = unsafe { start.add(len) };
-        if ptr == page.as_ptr() {
-            check_page(pt, page, access_flags)?;
+        if ptr >= page.as_ptr() {
+            if !aspace.check_region_access(
+                VirtAddrRange::from_start_size(page, PAGE_SIZE_4K),
+                access_flags,
+            ) {
+                return Err(LinuxError::EFAULT);
+            }
             page += PAGE_SIZE_4K;
         }
 
