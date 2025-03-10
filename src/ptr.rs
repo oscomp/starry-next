@@ -1,19 +1,9 @@
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::{MappingFlags, PageTable};
+use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
 
 use core::{alloc::Layout, ffi::CStr, slice};
-
-fn check_page(pt: &PageTable, page: VirtAddr, access_flags: MappingFlags) -> LinuxResult<()> {
-    let Ok((_, flags, _)) = pt.query(page) else {
-        return Err(LinuxError::EFAULT);
-    };
-    if !flags.contains(access_flags) {
-        return Err(LinuxError::EFAULT);
-    }
-    Ok(())
-}
 
 fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> LinuxResult<()> {
     let align = layout.align();
