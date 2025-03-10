@@ -11,3 +11,4 @@ apps/*/build/
 /.axconfig.*
 /*.img
 /*.sh
+tmp

@@ -41,14 +41,14 @@ fn main() {
         // TODO 临时在这里修改全局的CWD
         let cwd = &testcase.rfind('/').map_or(testcase, |idx| &testcase[..idx]);
         info!("Set CWD to {:?}", cwd);
-        set_current_dir(cwd);
+        let _ = set_current_dir(cwd);
         let user_task = task::spawn_user_task(
             Arc::new(Mutex::new(uspace)),
             UspaceContext::new(entry_vaddr.into(), ustack_top, 2333),
             axconfig::plat::USER_HEAP_BASE as _,
         );
         let exit_code = user_task.join();
-        set_current_dir("/".into());
+        let _ = set_current_dir("/".into());
         info!("User task {} exited with code: {:?}", testcase, exit_code);
     }
     println!("#### OS COMP TEST GROUP END basic-musl ####");
