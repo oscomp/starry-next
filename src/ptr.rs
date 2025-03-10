@@ -1,9 +1,19 @@
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageTable};
 use axtask::{TaskExtRef, current};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
 
 use core::{alloc::Layout, ffi::CStr, slice};
+
+fn check_page(pt: &PageTable, page: VirtAddr, access_flags: MappingFlags) -> LinuxResult<()> {
+    let Ok((_, flags, _)) = pt.query(page) else {
+        return Err(LinuxError::EFAULT);
+    };
+    if !flags.contains(access_flags) {
+        return Err(LinuxError::EFAULT);
+    }
+    Ok(())
+}
 
 fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> LinuxResult<()> {
     let align = layout.align();
@@ -28,6 +38,7 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
     // TODO: see check_region
     let task = current();
     let aspace = task.task_ext().aspace.lock();
+    let pt = aspace.page_table();
 
     let mut page = start.align_down_4k();
 
@@ -38,12 +49,7 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
         // SAFETY: Outer caller has provided a pointer to a valid C string.
         let ptr = unsafe { start.add(len) };
         if ptr >= page.as_ptr() {
-            if !aspace.check_region_access(
-                VirtAddrRange::from_start_size(page, PAGE_SIZE_4K),
-                access_flags,
-            ) {
-                return Err(LinuxError::EFAULT);
-            }
+            check_page(pt, page, access_flags)?;
             page += PAGE_SIZE_4K;
         }
 
