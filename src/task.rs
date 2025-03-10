@@ -72,9 +72,9 @@ impl TaskExt {
         &self,
         flags: usize,
         stack: Option<usize>,
-        _ptid: usize,
+        _ptid: *mut i32,
         _tls: usize,
-        _ctid: usize,
+        _ctid: *mut i32,
     ) -> AxResult<u64> {
         let _clone_flags = CloneFlags::from_bits((flags & !0x3f) as u32).unwrap();
 
@@ -269,6 +269,8 @@ pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
     let mut answer_id: u64 = 0;
     let mut answer_status = WaitStatus::NotExist;
 
+    let exit_code_out = unsafe { exit_code_ptr.as_mut() };
+
     for (index, child) in curr_task.task_ext().children.lock().iter().enumerate() {
         if pid <= 0 {
             if pid == 0 {
@@ -285,10 +287,8 @@ pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_out) = exit_code_out {
+                    *exit_code_out = exit_code;
                 }
                 answer_id = child.id().as_u64();
                 break;
@@ -302,10 +302,8 @@ pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_out) = exit_code_out {
+                    *exit_code_out = exit_code;
                 }
                 answer_id = child.id().as_u64();
             } else {

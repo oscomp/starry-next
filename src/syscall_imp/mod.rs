@@ -95,12 +95,21 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::dup => sys_dup(tf.arg0() as _) as _,
         Sysno::dup3 => sys_dup3(tf.arg0() as _, tf.arg1() as _) as _,
         Sysno::fcntl => sys_fcntl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _) as _,
+        #[cfg(target_arch = "x86_64")]
         Sysno::clone => sys_clone(
             tf.arg0() as _,
             tf.arg1() as _,
-            tf.arg2() as _,
-            tf.arg3() as _,
+            tf.arg2().into(),
             tf.arg4() as _,
+            tf.arg3().into(),
+        ) as _,
+        #[cfg(not(target_arch = "x86_64"))]
+        Sysno::clone => sys_clone(
+            tf.arg0() as _,
+            tf.arg1() as _,
+            tf.arg2().into(),
+            tf.arg3() as _,
+            tf.arg4().into(),
         ) as _,
         Sysno::wait4 => sys_wait4(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _) as _,
         Sysno::pipe2 => sys_pipe2(tf.arg0().into()) as _,
@@ -152,7 +161,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::times => sys_times(tf.arg0().into()) as _,
         Sysno::brk => sys_brk(tf.arg0() as _) as _,
         #[cfg(target_arch = "x86_64")]
-        Sysno::arch_prctl => sys_arch_prctl(tf.arg0() as _, tf.arg1() as _),
+        Sysno::arch_prctl => sys_arch_prctl(tf.arg0() as _, tf.arg1().into()),
         Sysno::set_tid_address => sys_set_tid_address(tf.arg0().into()),
         Sysno::clock_gettime => sys_clock_gettime(tf.arg0() as _, tf.arg1().into()) as _,
         Sysno::exit_group => sys_exit_group(tf.arg0() as _),

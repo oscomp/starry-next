@@ -6,7 +6,7 @@ use num_enum::TryFromPrimitive;
 
 use crate::{
     ctypes::{WaitFlags, WaitStatus},
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
+    ptr::{PtrWrapper, UserConstPtr, UserNullablePtr},
     syscall_body,
     syscall_imp::read_path_str,
     task::wait_pid,
@@ -77,36 +77,30 @@ pub(crate) fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> isize {
 }
 
 #[cfg(target_arch = "x86_64")]
-pub(crate) fn sys_arch_prctl(code: i32, addr: u64) -> isize {
+pub(crate) fn sys_arch_prctl(code: i32, addr: crate::ptr::UserPtr<u64>) -> isize {
     use axerrno::LinuxError;
+
     syscall_body!(sys_arch_prctl, {
-        match ArchPrctlCode::try_from(code) {
-            // TODO: check the legality of the address
-            Ok(ArchPrctlCode::SetFs) => {
-                unsafe {
-                    axhal::arch::write_thread_pointer(addr as usize);
+        unsafe {
+            match ArchPrctlCode::try_from(code) {
+                Ok(ArchPrctlCode::SetFs) => {
+                    axhal::arch::write_thread_pointer(addr.into_inner() as _);
+                    Ok(0)
                 }
-                Ok(0)
-            }
-            Ok(ArchPrctlCode::GetFs) => {
-                unsafe {
-                    *(addr as *mut u64) = axhal::arch::read_thread_pointer() as u64;
+                Ok(ArchPrctlCode::GetFs) => {
+                    *addr.get()? = axhal::arch::read_thread_pointer() as u64;
+                    Ok(0)
                 }
-                Ok(0)
-            }
-            Ok(ArchPrctlCode::SetGs) => {
-                unsafe {
-                    x86::msr::wrmsr(x86::msr::IA32_KERNEL_GSBASE, addr);
+                Ok(ArchPrctlCode::SetGs) => {
+                    x86::msr::wrmsr(x86::msr::IA32_KERNEL_GSBASE, addr.into_inner() as _);
+                    Ok(0)
                 }
-                Ok(0)
-            }
-            Ok(ArchPrctlCode::GetGs) => {
-                unsafe {
-                    *(addr as *mut u64) = x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE);
+                Ok(ArchPrctlCode::GetGs) => {
+                    *addr.get()? = x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE);
+                    Ok(0)
                 }
-                Ok(0)
+                _ => Err(LinuxError::ENOSYS),
             }
-            _ => Err(LinuxError::ENOSYS),
         }
     })
 }
@@ -114,19 +108,19 @@ pub(crate) fn sys_arch_prctl(code: i32, addr: u64) -> isize {
 pub(crate) fn sys_clone(
     flags: usize,
     user_stack: usize,
-    ptid: usize,
-    arg3: usize,
-    arg4: usize,
+    ptid: UserNullablePtr<i32>,
+    tls: usize,
+    ctid: UserNullablePtr<i32>,
 ) -> isize {
     syscall_body!(sys_clone, {
-        let tls = arg3;
-        let ctid = arg4;
-
         let stack = if user_stack == 0 {
             None
         } else {
             Some(user_stack)
         };
+
+        let ptid = ptid.get()?;
+        let ctid = ctid.get()?;
 
         let curr_task = current();
 
@@ -141,7 +135,7 @@ pub(crate) fn sys_clone(
     })
 }
 
-pub(crate) fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> isize {
+pub(crate) fn sys_wait4(pid: i32, exit_code_ptr: UserNullablePtr<i32>, option: u32) -> isize {
     let option_flag = WaitFlags::from_bits(option).unwrap();
     syscall_body!(sys_wait4, {
         let exit_code_ptr = exit_code_ptr.get()?;
