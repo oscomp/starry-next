@@ -1,19 +1,11 @@
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::{MappingFlags, PageTable};
+use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
-use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
+use memory_addr::{MemoryAddr, PAGE_SIZE_4K, PageIter4K, VirtAddr, VirtAddrRange};
 
 use core::{alloc::Layout, ffi::CStr, slice};
 
-fn check_page(pt: &PageTable, page: VirtAddr, access_flags: MappingFlags) -> LinuxResult<()> {
-    let Ok((_, flags, _)) = pt.query(page) else {
-        return Err(LinuxError::EFAULT);
-    };
-    if !flags.contains(access_flags) {
-        return Err(LinuxError::EFAULT);
-    }
-    Ok(())
-}
+use crate::mm::access_user_memory;
 
 fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> LinuxResult<()> {
     let align = layout.align();
@@ -31,34 +23,58 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
         return Err(LinuxError::EFAULT);
     }
 
+    // Now force each page to be loaded into memory.
+    access_user_memory(|| {
+        let page_start = start.align_down_4k();
+        let page_end = (start + layout.size()).align_up_4k();
+        for page in PageIter4K::new(page_start, page_end).unwrap() {
+            // SAFETY: The page is valid and we've checked the access flags.
+            unsafe { page.as_ptr_of::<u8>().read_volatile() };
+        }
+    });
+
     Ok(())
 }
 
 fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'static CStr> {
-    // TODO: see check_region
-    let task = current();
-    let aspace = task.task_ext().aspace.lock();
-    let pt = aspace.page_table();
-
     let mut page = start.align_down_4k();
 
     let start: *const u8 = start.as_ptr();
     let mut len = 0;
 
-    loop {
-        // SAFETY: Outer caller has provided a pointer to a valid C string.
-        let ptr = unsafe { start.add(len) };
-        if ptr >= page.as_ptr() {
-            check_page(pt, page, access_flags)?;
-            page += PAGE_SIZE_4K;
-        }
+    access_user_memory(|| {
+        loop {
+            // SAFETY: Outer caller has provided a pointer to a valid C string.
+            let ptr = unsafe { start.add(len) };
+            if ptr >= page.as_ptr() {
+                // We cannot prepare `aspace` outside of the loop, since holding
+                // aspace requires a mutex which would be required on page
+                // fault, and page faults can trigger inside the loop.
 
-        // SAFETY: The pointer is valid and points to a valid memory region.
-        if unsafe { *ptr } == 0 {
-            break;
+                // TODO: this is inefficient, but we have to do this instead of
+                // querying the page table since the page might has not been
+                // allocated yet.
+                let task = current();
+                let aspace = task.task_ext().aspace.lock();
+                if !aspace.check_region_access(
+                    VirtAddrRange::from_start_size(page, PAGE_SIZE_4K),
+                    access_flags,
+                ) {
+                    return Err(LinuxError::EFAULT);
+                }
+
+                page += PAGE_SIZE_4K;
+            }
+
+            // This might trigger a page fault
+            // SAFETY: The pointer is valid and points to a valid memory region.
+            if unsafe { *ptr } == 0 {
+                break;
+            }
+            len += 1;
         }
-        len += 1;
-    }
+        Ok(())
+    })?;
 
     // SAFETY: We've checked that the memory region contains a valid C string.
     Ok(unsafe { CStr::from_bytes_with_nul_unchecked(slice::from_raw_parts(start, len + 1)) })

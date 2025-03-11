@@ -1419,6 +1419,7 @@ dependencies = [
  "memory_addr",
  "num_enum",
  "numeric-enum-macro",
+ "percpu",
  "spin",
  "syscalls",
  "toml_edit",
