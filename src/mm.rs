@@ -59,7 +59,7 @@ fn map_elf(
             &interp_elf,
             axconfig::plat::USER_INTERP_BASE,
             Some(uspace_base as isize),
-            uspace_base,
+            // uspace_base,
         )
         .map_err(|_| AxError::InvalidData)?;
         // Set the first argument to the path of the user app.
@@ -177,10 +177,12 @@ static mut ACCESSING_USER_MEM: bool = false;
 /// Enables scoped access into user memory, allowing page faults to occur inside
 /// kernel.
 pub fn access_user_memory<R>(f: impl FnOnce() -> R) -> R {
-    ACCESSING_USER_MEM.write_current(true);
-    let result = f();
-    ACCESSING_USER_MEM.write_current(false);
-    result
+    ACCESSING_USER_MEM.with_current(|v| {
+        *v = true;
+        let result = f();
+        *v = false;
+        result
+    })
 }
 
 #[register_trap_handler(PAGE_FAULT)]
