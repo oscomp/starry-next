@@ -39,7 +39,7 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
 fn check_null_terminated<T: Eq + Default>(
     start: VirtAddr,
     access_flags: MappingFlags,
-) -> LinuxResult<&'static [T]> {
+) -> LinuxResult<(*const T, usize)> {
     let align = Layout::new::<T>().align();
     if start.as_usize() & (align - 1) != 0 {
         return Err(LinuxError::EFAULT);
@@ -87,8 +87,7 @@ fn check_null_terminated<T: Eq + Default>(
         Ok(())
     })?;
 
-    // SAFETY: We've checked that the memory region contains a valid C string.
-    Ok(unsafe { slice::from_raw_parts(start, len) })
+    Ok((start, len))
 }
 
 /// A trait representing a pointer in user space, which can be converted to a
@@ -187,9 +186,9 @@ impl<T> UserPtr<T> {
     where
         T: Eq + Default,
     {
-        let slice = check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)?;
-        // SAFETY: The pointer is mutable and we've validated the memory region.
-        unsafe { Ok(slice::from_raw_parts_mut(slice.as_ptr() as _, slice.len())) }
+        let (ptr, len) = check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)?;
+        // SAFETY: We've validated the memory region.
+        unsafe { Ok(slice::from_raw_parts_mut(ptr as *mut _, len)) }
     }
 }
 
@@ -226,7 +225,9 @@ impl<T> UserConstPtr<T> {
     where
         T: Eq + Default,
     {
-        check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)
+        let (ptr, len) = check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)?;
+        // SAFETY: We've validated the memory region.
+        unsafe { Ok(slice::from_raw_parts(ptr, len)) }
     }
 }
 
