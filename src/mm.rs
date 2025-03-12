@@ -59,7 +59,7 @@ fn map_elf(
             &interp_elf,
             axconfig::plat::USER_INTERP_BASE,
             Some(uspace_base as isize),
-            // uspace_base,
+            uspace_base,
         )
         .map_err(|_| AxError::InvalidData)?;
         // Set the first argument to the path of the user app.

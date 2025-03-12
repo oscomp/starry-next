@@ -3,7 +3,7 @@ use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, PageIter4K, VirtAddr, VirtAddrRange};
 
-use core::{alloc::Layout, ffi::CStr, slice};
+use core::{alloc::Layout, ffi::c_char, mem, slice, str};
 
 use crate::mm::access_user_memory;
 
@@ -36,17 +36,28 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
     Ok(())
 }
 
-fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'static CStr> {
+fn check_null_terminated<T: Eq + Default>(
+    start: VirtAddr,
+    access_flags: MappingFlags,
+) -> LinuxResult<&'static [T]> {
+    let align = Layout::new::<T>().align();
+    if start.as_usize() & (align - 1) != 0 {
+        return Err(LinuxError::EFAULT);
+    }
+
+    let zero = T::default();
+
     let mut page = start.align_down_4k();
 
-    let start: *const u8 = start.as_ptr();
+    let start = start.as_ptr_of::<T>();
     let mut len = 0;
 
     access_user_memory(|| {
         loop {
-            // SAFETY: Outer caller has provided a pointer to a valid C string.
+            // SAFETY: This won't overflow the address space since we'll check
+            // it below.
             let ptr = unsafe { start.add(len) };
-            if ptr >= page.as_ptr() {
+            while ptr as usize >= page.as_ptr() as usize {
                 // We cannot prepare `aspace` outside of the loop, since holding
                 // aspace requires a mutex which would be required on page
                 // fault, and page faults can trigger inside the loop.
@@ -68,7 +79,7 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
 
             // This might trigger a page fault
             // SAFETY: The pointer is valid and points to a valid memory region.
-            if unsafe { *ptr } == 0 {
+            if unsafe { ptr.read_volatile() } == zero {
                 break;
             }
             len += 1;
@@ -77,7 +88,7 @@ fn check_cstr(start: VirtAddr, access_flags: MappingFlags) -> LinuxResult<&'stat
     })?;
 
     // SAFETY: We've checked that the memory region contains a valid C string.
-    Ok(unsafe { CStr::from_bytes_with_nul_unchecked(slice::from_raw_parts(start, len + 1)) })
+    Ok(unsafe { slice::from_raw_parts(start, len) })
 }
 
 /// A trait representing a pointer in user space, which can be converted to a
@@ -133,12 +144,6 @@ pub trait PtrWrapper<T>: Sized {
         )?;
         unsafe { Ok(self.into_inner()) }
     }
-
-    /// Get the pointer as `&CStr`, validating the memory region specified by
-    /// the size of a C string.
-    fn get_as_cstr(self) -> LinuxResult<&'static CStr> {
-        check_cstr(self.address(), Self::ACCESS_FLAGS)
-    }
 }
 
 /// A pointer to user space memory.
@@ -167,6 +172,19 @@ impl<T> PtrWrapper<T> for UserPtr<T> {
     }
 }
 
+impl<T> UserPtr<T> {
+    /// Get the pointer as `&mut [T]`, terminated by a null value, validating
+    /// the memory region.
+    pub fn get_as_null_terminated(self) -> LinuxResult<&'static mut [T]>
+    where
+        T: Eq + Default,
+    {
+        let slice = check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)?;
+        // SAFETY: The pointer is mutable and we've validated the memory region.
+        unsafe { Ok(slice::from_raw_parts_mut(slice.as_ptr() as _, slice.len())) }
+    }
+}
+
 /// An immutable pointer to user space memory.
 ///
 /// See [`PtrWrapper`] for more details.
@@ -190,5 +208,29 @@ impl<T> PtrWrapper<T> for UserConstPtr<T> {
 
     fn address(&self) -> VirtAddr {
         VirtAddr::from_ptr_of(self.0)
+    }
+}
+
+impl<T> UserConstPtr<T> {
+    /// Get the pointer as `&[T]`, terminated by a null value, validating the
+    /// memory region.
+    pub fn get_as_null_terminated(self) -> LinuxResult<&'static [T]>
+    where
+        T: Eq + Default,
+    {
+        check_null_terminated::<T>(self.address(), Self::ACCESS_FLAGS)
+    }
+}
+
+static_assertions::const_assert_eq!(size_of::<c_char>(), size_of::<u8>());
+
+impl UserConstPtr<c_char> {
+    /// Get the pointer as `&str`, validating the memory region.
+    pub fn get_as_str(self) -> LinuxResult<Option<&'static str>> {
+        let slice = self.get_as_null_terminated()?;
+        // SAFETY: c_char is u8
+        let slice = unsafe { mem::transmute::<&[c_char], &[u8]>(slice) };
+
+        Ok(str::from_utf8(slice).ok())
     }
 }
