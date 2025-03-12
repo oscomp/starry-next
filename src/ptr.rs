@@ -144,6 +144,14 @@ pub trait PtrWrapper<T>: Sized {
         )?;
         unsafe { Ok(self.into_inner()) }
     }
+
+    fn nullable<R>(self, f: impl FnOnce(Self) -> LinuxResult<R>) -> LinuxResult<Option<R>> {
+        if self.address().as_ptr().is_null() {
+            Ok(None)
+        } else {
+            f(self).map(Some)
+        }
+    }
 }
 
 /// A pointer to user space memory.
