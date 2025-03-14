@@ -9,7 +9,7 @@ use crate::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use axerrno::LinuxError;
 use axhal::{
     arch::TrapFrame,
-    trap::{register_trap_handler, SYSCALL},
+    trap::{SYSCALL, register_trap_handler},
 };
 use syscalls::Sysno;
 
