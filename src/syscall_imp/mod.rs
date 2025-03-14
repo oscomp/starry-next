@@ -9,7 +9,7 @@ use crate::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use axerrno::LinuxError;
 use axhal::{
     arch::TrapFrame,
-    trap::{SYSCALL, register_trap_handler},
+    trap::{register_trap_handler, SYSCALL},
 };
 use syscalls::Sysno;
 
@@ -137,11 +137,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg4().into(),
         ) as _,
         Sysno::munmap => sys_munmap(tf.arg0().into(), tf.arg1() as _) as _,
-        Sysno::mprotect => sys_mprotect(
-            tf.arg0().into(),
-            tf.arg1() as _,
-            tf.arg2() as _,
-        ) as _,
+        Sysno::mprotect => sys_mprotect(tf.arg0().into(), tf.arg1() as _, tf.arg2() as _) as _,
         Sysno::times => sys_times(tf.arg0().into()) as _,
         Sysno::brk => sys_brk(tf.arg0() as _) as _,
         #[cfg(target_arch = "x86_64")]
