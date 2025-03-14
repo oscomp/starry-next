@@ -3,7 +3,6 @@ use core::ffi::{c_char, c_int, c_void};
 use alloc::string::ToString;
 use arceos_posix_api::AT_FDCWD;
 use axerrno::{AxError, LinuxError};
-use axtask::{TaskExtRef, current};
 
 use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
@@ -152,17 +151,6 @@ pub(crate) fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> isize
 
     if len < DirEnt::FIXED_SIZE {
         warn!("Buffer size too small: {len}");
-        return -1;
-    }
-
-    let current_task = current();
-    if let Err(e) = current_task
-        .task_ext()
-        .aspace
-        .lock()
-        .alloc_for_lazy((buf as usize).into(), len)
-    {
-        warn!("Memory allocation failed: {:?}", e);
         return -1;
     }
 
