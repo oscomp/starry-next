@@ -151,14 +151,14 @@ pub(crate) fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> isize
 
     if len < DirEnt::FIXED_SIZE {
         warn!("Buffer size too small: {len}");
-        return -1;
+        return -LinuxError::EINVAL.code() as _;
     }
 
     let path = match arceos_posix_api::Directory::from_fd(fd).map(|dir| dir.path().to_string()) {
         Ok(path) => path,
         Err(err) => {
             warn!("Invalid directory descriptor: {:?}", err);
-            return -1;
+            return -LinuxError::EBADF.code() as _;
         }
     };
 
