@@ -20,7 +20,7 @@ use self::sys::*;
 use self::task::*;
 use self::utils::*;
 
-macro_rules! instrument {(
+macro_rules! syscall_instrument {(
     $( #[$attr:meta] )*
     $pub:vis
     fn $fname:ident (
@@ -50,7 +50,7 @@ macro_rules! instrument {(
         res
     }
 )}
-pub(crate) use instrument;
+pub(crate) use syscall_instrument;
 
 #[register_trap_handler(SYSCALL)]
 fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {

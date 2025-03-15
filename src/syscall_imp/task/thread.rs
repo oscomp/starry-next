@@ -9,7 +9,7 @@ use num_enum::TryFromPrimitive;
 use crate::{
     ctypes::{WaitFlags, WaitStatus},
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::instrument,
+    syscall_imp::syscall_instrument,
     task::wait_pid,
 };
 
@@ -34,12 +34,12 @@ enum ArchPrctlCode {
     SetCpuid = 0x1012,
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_getpid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().proc_id as _)
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_getppid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().get_parent() as _)
 }
@@ -66,7 +66,7 @@ pub fn sys_exit_group(status: i32) -> ! {
 /// To set the clear_child_tid field in the task extended data.
 ///
 /// The set_tid_address() always succeeds
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> LinuxResult<isize> {
     let curr = current();
     curr.task_ext()
@@ -75,7 +75,7 @@ pub fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> LinuxResult<isize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_arch_prctl(code: i32, addr: u64) -> LinuxResult<isize> {
     use axerrno::LinuxError;
     match ArchPrctlCode::try_from(code) {
@@ -108,7 +108,7 @@ pub fn sys_arch_prctl(code: i32, addr: u64) -> LinuxResult<isize> {
     }
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_clone(
     flags: usize,
     user_stack: usize,
@@ -137,7 +137,7 @@ pub fn sys_clone(
     }
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> LinuxResult<isize> {
     let option_flag = WaitFlags::from_bits(option).unwrap();
     let exit_code_ptr = exit_code_ptr.nullable(UserPtr::get)?;
@@ -166,7 +166,7 @@ pub fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> LinuxRes
     }
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_execve(
     path: UserConstPtr<c_char>,
     argv: UserConstPtr<usize>,

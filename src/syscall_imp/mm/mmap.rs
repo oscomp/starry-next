@@ -7,7 +7,7 @@ use memory_addr::{VirtAddr, VirtAddrRange};
 
 use crate::{
     ptr::{PtrWrapper, UserPtr},
-    syscall_imp::instrument,
+    syscall_imp::syscall_instrument,
 };
 
 bitflags::bitflags! {
@@ -66,7 +66,7 @@ bitflags::bitflags! {
     }
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_mmap(
     addr: UserPtr<usize>,
     length: usize,
@@ -157,7 +157,7 @@ pub fn sys_mmap(
     Ok(start_addr.as_usize() as _)
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_munmap(addr: UserPtr<usize>, length: usize) -> LinuxResult<isize> {
     // Safety: addr is used for mapping, and we won't directly access it.
     let addr = unsafe { addr.into_inner() };
@@ -172,7 +172,7 @@ pub fn sys_munmap(addr: UserPtr<usize>, length: usize) -> LinuxResult<isize> {
     Ok(0)
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_mprotect(addr: UserPtr<usize>, length: usize, prot: i32) -> LinuxResult<isize> {
     // Safety: addr is used for mapping, and we won't directly access it.
     let addr = unsafe { addr.into_inner() };

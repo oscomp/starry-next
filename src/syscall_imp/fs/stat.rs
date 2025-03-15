@@ -5,7 +5,7 @@ use macro_rules_attribute::apply;
 
 use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::instrument,
+    syscall_imp::syscall_instrument,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -92,7 +92,7 @@ pub fn sys_fstat(fd: i32, kstatbuf: UserPtr<Kstat>) -> LinuxResult<isize> {
     Ok(0)
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_fstatat(
     dir_fd: isize,
     path: UserConstPtr<c_char>,
@@ -182,7 +182,7 @@ pub struct StatX {
     pub stx_dio_offset_align: u32,
 }
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_statx(
     dirfd: i32,
     pathname: UserConstPtr<c_char>,

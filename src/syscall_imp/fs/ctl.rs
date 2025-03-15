@@ -7,7 +7,7 @@ use macro_rules_attribute::apply;
 
 use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::instrument,
+    syscall_imp::syscall_instrument,
 };
 
 /// The ioctl() system call manipulates the underlying device parameters
@@ -18,7 +18,7 @@ use crate::{
 /// * `op` - The request code. It is of type unsigned long in glibc and BSD,
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
     warn!("Unimplemented syscall: SYS_IOCTL");
     Ok(0)

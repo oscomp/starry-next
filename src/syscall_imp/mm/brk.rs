@@ -2,9 +2,9 @@ use axerrno::LinuxResult;
 use axtask::{TaskExtRef, current};
 use macro_rules_attribute::apply;
 
-use crate::syscall_imp::instrument;
+use crate::syscall_imp::syscall_instrument;
 
-#[apply(instrument)]
+#[apply(syscall_instrument)]
 pub fn sys_brk(addr: usize) -> LinuxResult<isize> {
     let current_task = current();
     let mut return_val: isize = current_task.task_ext().get_heap_top() as isize;
