@@ -21,6 +21,10 @@ bitflags::bitflags! {
         const PROT_WRITE = 1 << 1;
         /// Page can be executed.
         const PROT_EXEC = 1 << 2;
+        /// Extend change to start of growsdown vma (mprotect only).
+        const PROT_GROWDOWN = 0x01000000;
+        /// Extend change to start of growsup vma (mprotect only).
+        const PROT_GROWSUP = 0x02000000;
     }
 }
 
@@ -174,7 +178,13 @@ pub fn sys_mprotect(addr: UserPtr<usize>, mut length: usize, prot: i32) -> i32 {
         // Safety: addr is used for mapping, and we won't directly access it.
         let addr = unsafe { addr.into_inner() };
 
-        let permission_flags = MmapProt::from_bits_truncate(prot);
+        // TODO: implement PROT_GROWSUP & PROT_GROWSDOWN
+        let Some(permission_flags) = MmapProt::from_bits(prot) else {
+            return Err(LinuxError::EINVAL);
+        };
+        if permission_flags.contains(MmapProt::PROT_GROWDOWN | MmapProt::PROT_GROWSUP) {
+            return Err(LinuxError::EINVAL);
+        }
 
         let curr = current();
         let curr_ext = curr.task_ext();
