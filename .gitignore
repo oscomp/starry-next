@@ -12,3 +12,4 @@ apps/*/build/
 /*.img
 /*.sh
 tmp
+apps/oscomp/*.out

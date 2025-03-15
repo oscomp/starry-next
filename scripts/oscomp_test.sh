@@ -32,9 +32,22 @@ if [ "$LIBC" != "musl" ] && [ "$LIBC" != "glibc" ]; then
 fi
 
 basic_testlist=(
-    "/$LIBC/basic/brk"
     "/$LIBC/basic/chdir"
-    "/$LIBC/basic/execve"
+    "/$LIBC/basic/close"
+    "/$LIBC/basic/dup"
+    "/$LIBC/basic/dup2"
+    "/$LIBC/basic/fstat"
+    "/$LIBC/basic/getcwd"
+    "/$LIBC/basic/getdents"
+    "/$LIBC/basic/mkdir_"
+    "/$LIBC/basic/mount"
+    "/$LIBC/basic/open"
+    "/$LIBC/basic/openat"
+    "/$LIBC/basic/pipe"
+    "/$LIBC/basic/read"
+    "/$LIBC/basic/umount"
+    "/$LIBC/basic/unlink"
+    "/$LIBC/basic/write"
 )
 busybox_testlist=("/$LIBC/busybox sh /$LIBC/busybox_testcode.sh")
 iozone_testlist=("/$LIBC/busybox sh /$LIBC/iozone_testcode.sh")
