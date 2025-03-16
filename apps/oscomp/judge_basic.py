@@ -116,7 +116,7 @@ class test_close(TestBase):
         self.assert_ge(len(data), 1)
         self.assert_in_str(r"  close \d+ success.", data)
 
-class dup2_test(TestBase):
+class test_dup2(TestBase):
     def __init__(self):
         super().__init__("dup2", 2)
 
@@ -452,6 +452,21 @@ target_testcases = [
     "test_brk",
     "test_chdir",
     "test_execve",
+    "test_close",
+    "test_dup",
+    "test_dup2",
+    "test_fstat",
+    "test_getcwd",
+    "test_mkdir",
+    "test_open",
+    "test_pipe",
+    "test_read",
+    "test_unlink",
+    "test_write",
+    # "test_openat",
+    # "test_getdents",
+    # "test_mount",
+    # "test_umount",
 ]
 
 if __name__ == '__main__':
@@ -499,6 +514,7 @@ if __name__ == '__main__':
     for x in runner.values():
         result = x.get_result()
         if result['all'] != result['pass'] and result['name'] in target_testcases:
+            print(result['name'] + " failed!")
             exit(255)
-    print("Busybox testcases passed.")
+    print("Basic testcases passed.")
     print(json.dumps(test_results))
