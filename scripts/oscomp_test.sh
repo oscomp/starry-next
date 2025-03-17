@@ -59,9 +59,9 @@ libctest_testlist=("/$LIBC/busybox sh /$LIBC/libctest_testcode.sh")
 
 testcases_type=(
     "basic"
-    # "busybox"
-    # "lua"
-    # "libctest"
+    "busybox"
+    "lua"
+    "libctest"
 )
 
 IMG_URL=https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.1/sdcard-$ARCH.img.gz
