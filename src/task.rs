@@ -223,9 +223,7 @@ impl AxNamespaceIf for AxNamespaceImpl {
 impl Drop for TaskExt {
     fn drop(&mut self) {
         if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
-            // ARMv8 (aarch64) and LoongArch64 use separate page tables for user space
-            // (aarch64: TTBR0_EL1, LoongArch64: PGDL), so there is no need to copy the
-            // kernel portion to the user page table.
+            // See [`crate::new_user_aspace`]
             let kernel = kernel_aspace().lock();
             self.aspace
                 .lock()
