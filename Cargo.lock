@@ -401,6 +401,7 @@ dependencies = [
  "log",
  "memory_addr",
  "memory_set",
+ "page_table_multiarch",
 ]
 
 [[package]]

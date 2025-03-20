@@ -6,6 +6,7 @@ use alloc::{
 use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
+use memory_addr::VirtAddrRange;
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
@@ -18,7 +19,7 @@ use axhal::{
     arch::{TrapFrame, UspaceContext},
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
 };
-use axmm::AddrSpace;
+use axmm::{kernel_aspace, AddrSpace};
 use axns::{AxNamespace, AxNamespaceIf};
 use axsync::Mutex;
 use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
@@ -216,6 +217,20 @@ impl AxNamespaceIf for AxNamespaceImpl {
             })) as *mut u8;
         }
         current.task_ext().ns.base()
+    }
+}
+
+impl Drop for TaskExt {
+    fn drop(&mut self) {
+        if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
+            // ARMv8 (aarch64) and LoongArch64 use separate page tables for user space
+            // (aarch64: TTBR0_EL1, LoongArch64: PGDL), so there is no need to copy the
+            // kernel portion to the user page table.
+            let kernel = kernel_aspace().lock();
+            self.aspace
+                .lock()
+                .clear_mappings(VirtAddrRange::from_start_size(kernel.base(), kernel.size()));
+        }
     }
 }
 

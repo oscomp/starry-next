@@ -18,16 +18,29 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use axerrno::AxResult;
 use axhal::arch::UspaceContext;
+use axmm::{AddrSpace, kernel_aspace};
 use axsync::Mutex;
 use memory_addr::VirtAddr;
 
-fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
-    let mut uspace = axmm::new_user_aspace(
+/// Creates a new address space for user processes.
+fn new_user_aspace() -> AxResult<AddrSpace> {
+    let mut aspace = AddrSpace::new_empty(
         VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
         axconfig::plat::USER_SPACE_SIZE,
-    )
-    .expect("Failed to create user address space");
+    )?;
+    if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
+        // ARMv8 (aarch64) and LoongArch64 use separate page tables for user space
+        // (aarch64: TTBR0_EL1, LoongArch64: PGDL), so there is no need to copy the
+        // kernel portion to the user page table.
+        aspace.copy_mappings_from(&kernel_aspace().lock())?;
+    }
+    Ok(aspace)
+}
+
+fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
+    let mut uspace = new_user_aspace().expect("Failed to create user address space");
 
     let path = arceos_posix_api::FilePath::new(&args[0]).expect("Invalid file path");
     axfs::api::set_current_dir(path.parent().unwrap()).expect("Failed to set current dir");
