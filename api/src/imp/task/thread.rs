@@ -182,28 +182,20 @@ pub fn sys_wait4(pid: i32, exit_code: UserPtr<i32>, option: u32) -> LinuxResult<
 #[apply(syscall_instrument)]
 pub fn sys_execve(
     path: UserConstPtr<c_char>,
-    argv: UserConstPtr<usize>,
-    envp: UserConstPtr<usize>,
+    argv: UserConstPtr<UserConstPtr<c_char>>,
+    envp: UserConstPtr<UserConstPtr<c_char>>,
 ) -> LinuxResult<isize> {
     let path_str = path.get_as_str()?;
 
     let args = argv
         .get_as_null_terminated()?
         .iter()
-        .map(|arg| {
-            UserConstPtr::<c_char>::from(*arg)
-                .get_as_str()
-                .map(Into::into)
-        })
+        .map(|arg| arg.get_as_str().map(Into::into))
         .collect::<Result<Vec<_>, _>>()?;
     let envs = envp
         .get_as_null_terminated()?
         .iter()
-        .map(|env| {
-            UserConstPtr::<c_char>::from(*env)
-                .get_as_str()
-                .map(Into::into)
-        })
+        .map(|env| env.get_as_str().map(Into::into))
         .collect::<Result<Vec<_>, _>>()?;
 
     info!(
