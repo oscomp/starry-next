@@ -81,45 +81,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arceos_api"
-version = "0.1.0"
-dependencies = [
- "axconfig",
- "axerrno",
- "axfeat",
- "axhal",
- "axio",
- "axlog",
- "axruntime",
- "axsync",
-]
-
-[[package]]
-name = "arceos_posix_api"
-version = "0.1.0"
-dependencies = [
- "axalloc",
- "axconfig",
- "axerrno",
- "axfeat",
- "axfs",
- "axhal",
- "axio",
- "axlog",
- "axnet",
- "axns",
- "axruntime",
- "axsync",
- "axtask",
- "bindgen",
- "ctor_bare",
- "flatten_objects",
- "lazy_static",
- "spin",
- "static_assertions",
-]
-
-[[package]]
 name = "arm_gicv2"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -447,17 +408,6 @@ dependencies = [
  "ctor_bare",
  "kernel_guard",
  "percpu",
-]
-
-[[package]]
-name = "axstd"
-version = "0.1.0"
-dependencies = [
- "arceos_api",
- "axerrno",
- "axfeat",
- "axio",
- "kspin",
 ]
 
 [[package]]
@@ -915,9 +865,6 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
-dependencies = [
- "spin",
-]
 
 [[package]]
 name = "lazycell"
@@ -1419,32 +1366,64 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "starry"
 version = "0.1.0"
 dependencies = [
- "arceos_posix_api",
+ "axerrno",
+ "axfeat",
+ "axhal",
+ "axlog",
+ "axruntime",
+ "axtask",
+ "linkme",
+ "starry-api",
+ "starry-core",
+ "syscalls",
+ "toml_edit",
+]
+
+[[package]]
+name = "starry-api"
+version = "0.1.0"
+dependencies = [
  "axconfig",
  "axerrno",
  "axfs",
  "axhal",
- "axmm",
- "axns",
- "axruntime",
- "axstd",
- "axsync",
+ "axlog",
  "axtask",
  "bitflags 2.9.0",
- "crate_interface",
- "kernel-elf-parser",
- "linkme",
- "log",
  "macro_rules_attribute",
  "memory_addr",
  "num_enum",
+ "starry-core",
+ "x86",
+]
+
+[[package]]
+name = "starry-core"
+version = "0.1.0"
+dependencies = [
+ "axconfig",
+ "axerrno",
+ "axfeat",
+ "axfs",
+ "axhal",
+ "axio",
+ "axlog",
+ "axmm",
+ "axnet",
+ "axns",
+ "axsync",
+ "axtask",
+ "bindgen",
+ "bitflags 2.9.0",
+ "crate_interface",
+ "ctor_bare",
+ "flatten_objects",
+ "kernel-elf-parser",
+ "linkme",
+ "memory_addr",
  "numeric-enum-macro",
  "percpu",
  "spin",
- "static_assertions",
- "syscalls",
- "toml_edit",
- "x86",
  "xmas-elf",
 ]
 
