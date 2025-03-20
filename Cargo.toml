@@ -71,3 +71,7 @@ smp = ["axfeat/smp"]
 
 [build-dependencies]
 toml_edit = "0.22"
+
+[patch.crates-io]
+page_table_multiarch = { git = "https://github.com/Mivik/page_table_multiarch.git", rev = "19ededd" }
+page_table_entry = { git = "https://github.com/Mivik/page_table_multiarch.git", rev = "19ededd" }

@@ -1,16 +1,20 @@
 use alloc::{string::String, sync::Arc};
 use axhal::arch::UspaceContext;
 use axsync::Mutex;
-use memory_addr::VirtAddr;
 
-use crate::{mm::load_user_app, path::FilePath, task::spawn_user_task};
+use crate::{
+    mm::{copy_from_kernel, load_user_app, new_user_aspace_empty},
+    path::FilePath,
+    task::spawn_user_task,
+};
 
 pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
-    let mut uspace = axmm::new_user_aspace(
-        VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
-        axconfig::plat::USER_SPACE_SIZE,
-    )
-    .expect("Failed to create user address space");
+    let mut uspace = new_user_aspace_empty()
+        .and_then(|mut it| {
+            copy_from_kernel(&mut it)?;
+            Ok(it)
+        })
+        .expect("Failed to create user address space");
 
     let path = FilePath::new(&args[0]).expect("Invalid file path");
     axfs::api::set_current_dir(path.parent().unwrap()).expect("Failed to set current dir");
