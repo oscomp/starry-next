@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["api", "core"]
-exclude = [".arceos"]
+exclude = [".arceos", "apps"]
 
 [workspace.package]
 version = "0.1.0"
