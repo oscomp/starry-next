@@ -1,10 +1,10 @@
 use alloc::{string::String, sync::Arc};
-use arceos_posix_api::FilePath;
 use axhal::arch::UspaceContext;
 use axsync::Mutex;
 
 use crate::{
     mm::{copy_from_kernel, load_user_app, new_user_aspace_empty},
+    path::FilePath,
     task::spawn_user_task,
 };
 

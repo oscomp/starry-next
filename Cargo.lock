@@ -81,31 +81,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arceos_posix_api"
-version = "0.1.0"
-dependencies = [
- "axalloc",
- "axconfig",
- "axerrno",
- "axfeat",
- "axfs",
- "axhal",
- "axio",
- "axlog",
- "axnet",
- "axns",
- "axruntime",
- "axsync",
- "axtask",
- "bindgen",
- "ctor_bare",
- "flatten_objects",
- "lazy_static",
- "spin",
- "static_assertions",
-]
-
-[[package]]
 name = "arm_gicv2"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -583,9 +558,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.32"
+version = "4.5.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6088f3ae8c3608d19260cd7445411865a485688711b78b5be70d78cd96136f83"
+checksum = "e958897981290da2a852763fe9cdb89cd36977a5d729023127095fa94d95e2ff"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -593,9 +568,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.32"
+version = "4.5.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22a7ef7f676155edfb82daa97f99441f3ebf4a58d5e32f295a56259f1b6facc8"
+checksum = "83b0f35019843db2160b5bb19ae09b4e6411ac33fc6a712003c33e03090e2489"
 dependencies = [
  "anstream",
  "anstyle",
@@ -891,9 +866,6 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
-dependencies = [
- "spin",
-]
 
 [[package]]
 name = "lazycell"
@@ -1090,9 +1062,9 @@ checksum = "300e4bdb6b46b592948e700ea1ef24a4296491f6a0ee722b258040abd15a3714"
 
 [[package]]
 name = "once_cell"
-version = "1.21.1"
+version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75b0bedcc4fe52caa0e03d9f1151a323e4aa5e2d78ba3580400cd3c9e2bc4bc"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "page_table_entry"
@@ -1397,6 +1369,7 @@ dependencies = [
  "axfeat",
  "axhal",
  "axlog",
+ "axruntime",
  "axtask",
  "linkme",
  "starry-api",
@@ -1408,7 +1381,6 @@ dependencies = [
 name = "starry-api"
 version = "0.1.0"
 dependencies = [
- "arceos_posix_api",
  "axconfig",
  "axerrno",
  "axfs",
@@ -1421,7 +1393,6 @@ dependencies = [
  "memory_addr",
  "num_enum",
  "starry-core",
- "static_assertions",
  "x86",
 ]
 
@@ -1429,18 +1400,23 @@ dependencies = [
 name = "starry-core"
 version = "0.1.0"
 dependencies = [
- "arceos_posix_api",
  "axconfig",
  "axerrno",
+ "axfeat",
  "axfs",
  "axhal",
+ "axio",
  "axlog",
  "axmm",
+ "axnet",
  "axns",
  "axsync",
  "axtask",
+ "bindgen",
  "bitflags 2.9.0",
  "crate_interface",
+ "ctor_bare",
+ "flatten_objects",
  "kernel-elf-parser",
  "linkme",
  "memory_addr",

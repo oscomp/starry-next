@@ -1,17 +1,14 @@
-use core::{ffi::c_char, ptr};
+use core::ffi::c_char;
 
 use alloc::vec::Vec;
 use axerrno::{LinuxError, LinuxResult};
 use axtask::{TaskExtRef, current, yield_now};
 use macro_rules_attribute::apply;
 use num_enum::TryFromPrimitive;
-use starry_core::{
-    ctypes::{WaitFlags, WaitStatus},
-    task::{exec, wait_pid},
-};
+use starry_core::task::{CloneFlags, WaitError, exec, wait_pid};
 
 use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
+    ptr::{UserConstPtr, UserPtr, nullable},
     syscall_instrument,
 };
 
@@ -96,16 +93,12 @@ pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>) -> LinuxResult<isize> {
             Ok(0)
         }
         ArchPrctlCode::GetFs => {
-            unsafe {
-                *addr.get()? = axhal::arch::read_thread_pointer() as u64;
-            }
+            *addr.get_as_mut()? = axhal::arch::read_thread_pointer() as u64;
             Ok(0)
         }
 
         ArchPrctlCode::GetGs => {
-            unsafe {
-                *addr.get()? = x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE);
-            }
+            *addr.get_as_mut()? = unsafe { x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE) };
             Ok(0)
         }
         ArchPrctlCode::GetCpuid => Ok(0),
@@ -121,6 +114,7 @@ pub fn sys_clone(
     arg3: usize,
     arg4: usize,
 ) -> LinuxResult<isize> {
+    let flags = CloneFlags::from_bits((flags & !0x3f) as u32).unwrap();
     let tls = arg3;
     let ctid = arg4;
 
@@ -142,29 +136,43 @@ pub fn sys_clone(
     }
 }
 
+bitflags::bitflags! {
+    pub struct WaitFlags: u32 {
+        /// 不挂起当前进程，直接返回
+        const WNOHANG = 1 << 0;
+        /// 报告已执行结束的用户进程的状态
+        const WIMTRACED = 1 << 1;
+        /// 报告还未结束的用户进程的状态
+        const WCONTINUED = 1 << 3;
+        /// Wait for any child
+        const WALL = 1 << 30;
+        /// Wait for cloned process
+        const WCLONE = 1 << 31;
+    }
+}
+
 #[apply(syscall_instrument)]
-pub fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> LinuxResult<isize> {
+pub fn sys_wait4(pid: i32, exit_code: UserPtr<i32>, option: u32) -> LinuxResult<isize> {
     let option_flag = WaitFlags::from_bits(option).unwrap();
-    let exit_code_ptr = exit_code_ptr.nullable(UserPtr::get)?;
     loop {
-        let answer = unsafe { wait_pid(pid, exit_code_ptr.unwrap_or_else(ptr::null_mut)) };
+        let answer = wait_pid(pid);
         match answer {
-            Ok(pid) => {
+            Ok((pid, code)) => {
+                if let Some(exit_code) = nullable!(exit_code.get_as_mut())? {
+                    *exit_code = code << 8;
+                }
                 return Ok(pid as isize);
             }
             Err(status) => match status {
-                WaitStatus::NotExist => {
+                WaitError::NotFound => {
                     return Err(LinuxError::ECHILD);
                 }
-                WaitStatus::Running => {
+                WaitError::Running => {
                     if option_flag.contains(WaitFlags::WNOHANG) {
                         return Ok(0);
                     } else {
                         yield_now();
                     }
-                }
-                _ => {
-                    panic!("Shouldn't reach here!");
                 }
             },
         }

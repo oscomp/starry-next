@@ -5,11 +5,10 @@ use core::{
 };
 
 use alloc::{
+    collections::btree_map::BTreeMap,
     string::{String, ToString},
     sync::Arc,
-    vec::Vec,
 };
-use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
 use axhal::{
@@ -23,10 +22,52 @@ use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
 use memory_addr::VirtAddrRange;
 use spin::Once;
 
-use crate::{
-    ctypes::{CloneFlags, TimeStat, WaitStatus},
-    mm::copy_from_kernel,
-};
+use crate::{fd::FD_TABLE, mm::copy_from_kernel, time::TimeStat};
+
+bitflags::bitflags! {
+    /// flags for [`TaskExt::clone_task`]
+    #[derive(Debug, Clone, Copy)]
+    pub struct CloneFlags: u32 {
+        /// .
+        const CLONE_NEWTIME = 1 << 7;
+        /// 共享地址空间
+        const CLONE_VM = 1 << 8;
+        /// 共享文件系统新信息
+        const CLONE_FS = 1 << 9;
+        /// 共享文件描述符(fd)表
+        const CLONE_FILES = 1 << 10;
+        /// 共享信号处理函数
+        const CLONE_SIGHAND = 1 << 11;
+        /// 创建指向子任务的fd，用于 sys_pidfd_open
+        const CLONE_PIDFD = 1 << 12;
+        /// 用于 sys_ptrace
+        const CLONE_PTRACE = 1 << 13;
+        /// 指定父任务创建后立即阻塞，直到子任务退出才继续
+        const CLONE_VFORK = 1 << 14;
+        /// 指定子任务的 ppid 为当前任务的 ppid，相当于创建“兄弟”而不是“子女”
+        const CLONE_PARENT = 1 << 15;
+        /// 作为一个“线程”被创建。具体来说，它同 CLONE_PARENT 一样设置 ppid，且不可被 wait
+        const CLONE_THREAD = 1 << 16;
+        /// 子任务使用新的命名空间。目前还未用到
+        const CLONE_NEWNS = 1 << 17;
+        /// 子任务共享同一组信号量。用于 sys_semop
+        const CLONE_SYSVSEM = 1 << 18;
+        /// 要求设置 tls
+        const CLONE_SETTLS = 1 << 19;
+        /// 要求在父任务的一个地址写入子任务的 tid
+        const CLONE_PARENT_SETTID = 1 << 20;
+        /// 要求将子任务的一个地址清零。这个地址会被记录下来，当子任务退出时会触发此处的 futex
+        const CLONE_CHILD_CLEARTID = 1 << 21;
+        /// 历史遗留的 flag，现在按 linux 要求应忽略
+        const CLONE_DETACHED = 1 << 22;
+        /// 与 sys_ptrace 相关，目前未用到
+        const CLONE_UNTRACED = 1 << 23;
+        /// 要求在子任务的一个地址写入子任务的 tid
+        const CLONE_CHILD_SETTID = 1 << 24;
+        /// New pid namespace.
+        const CLONE_NEWPID = 1 << 29;
+    }
+}
 
 /// Task extended data for the monolithic kernel.
 pub struct TaskExt {
@@ -35,7 +76,7 @@ pub struct TaskExt {
     /// The parent process ID.
     pub parent_id: AtomicU64,
     /// children process
-    pub children: Mutex<Vec<AxTaskRef>>,
+    pub children: Mutex<BTreeMap<u64, AxTaskRef>>,
     /// The clear thread tid field
     ///
     /// See <https://manpages.debian.org/unstable/manpages-dev/set_tid_address.2.en.html#clear_child_tid>
@@ -66,7 +107,7 @@ impl TaskExt {
         Self {
             proc_id,
             parent_id: AtomicU64::new(1),
-            children: Mutex::new(Vec::new()),
+            children: Mutex::new(BTreeMap::new()),
             uctx,
             clear_child_tid: AtomicU64::new(0),
             aspace,
@@ -79,14 +120,12 @@ impl TaskExt {
 
     pub fn clone_task(
         &self,
-        flags: usize,
+        _flags: CloneFlags,
         stack: Option<usize>,
         _ptid: usize,
         _tls: usize,
         _ctid: usize,
     ) -> AxResult<u64> {
-        let _clone_flags = CloneFlags::from_bits((flags & !0x3f) as u32).unwrap();
-
         let mut new_task = TaskInner::new(
             || {
                 let curr = axtask::current();
@@ -120,9 +159,9 @@ impl TaskExt {
         #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
         new_uctx.set_ip(new_uctx.get_ip() + 4);
         new_uctx.set_retval(0);
-        let return_id: u64 = new_task.id().as_u64();
+        let proc_id: u64 = new_task.id().as_u64();
         let new_task_ext = TaskExt::new(
-            return_id as usize,
+            proc_id as usize,
             new_uctx,
             Arc::new(Mutex::new(new_aspace)),
             axconfig::plat::USER_HEAP_BASE as _,
@@ -130,8 +169,12 @@ impl TaskExt {
         new_task_ext.ns_init_new();
         new_task.init_task_ext(new_task_ext);
         let new_task_ref = axtask::spawn_task(new_task);
-        current_task.task_ext().children.lock().push(new_task_ref);
-        Ok(return_id)
+        current_task
+            .task_ext()
+            .children
+            .lock()
+            .insert(proc_id, new_task_ref);
+        Ok(proc_id)
     }
 
     pub fn clear_child_tid(&self) -> u64 {
@@ -284,70 +327,41 @@ pub fn read_trapframe_from_kstack(kstack_top: usize) -> TrapFrame {
     unsafe { *trap_frame_ptr }
 }
 
-/// # Safety
-///
-/// The caller must ensure that the pointer is valid and properly aligned if it's not null.
-pub unsafe fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitError {
+    Running,
+    NotFound,
+}
+
+pub fn wait_pid(pid: i32) -> Result<(u64, i32), WaitError> {
     let curr_task = current();
-    let mut exit_task_id: usize = 0;
-    let mut answer_id: u64 = 0;
-    let mut answer_status = WaitStatus::NotExist;
+    let mut children = curr_task.task_ext().children.lock();
 
-    for (index, child) in curr_task.task_ext().children.lock().iter().enumerate() {
-        if pid <= 0 {
-            if pid == 0 {
-                warn!("Don't support for process group.");
-            }
-
-            answer_status = WaitStatus::Running;
+    if pid <= 0 {
+        if pid == 0 {
+            warn!("Don't support for process group.");
+        }
+        for (&pid, child) in children.iter() {
             if child.state() == axtask::TaskState::Exited {
                 let exit_code = child.exit_code();
-                answer_status = WaitStatus::Exited;
-                info!(
-                    "wait pid _{}_ with code _{}_",
-                    child.id().as_u64(),
-                    exit_code
-                );
-                exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
-                }
-                answer_id = child.id().as_u64();
-                break;
+                info!("wait pid {} with code {}", pid, exit_code);
+                children.remove(&pid);
+                return Ok((pid, exit_code));
             }
-        } else if child.id().as_u64() == pid as u64 {
-            if let Some(exit_code) = child.join() {
-                answer_status = WaitStatus::Exited;
-                info!(
-                    "wait pid _{}_ with code _{:?}_",
-                    child.id().as_u64(),
-                    exit_code
-                );
-                exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
-                }
-                answer_id = child.id().as_u64();
-            } else {
-                answer_status = WaitStatus::Running;
-            }
-            break;
         }
+        Err(WaitError::Running)
+    } else if let Some(child) = children.get(&(pid as u64)) {
+        if let Some(exit_code) = child.join() {
+            let pid = child.id().as_u64();
+            info!("wait pid {} with code {:?}", pid, exit_code);
+            children.remove(&pid);
+            Ok((pid, exit_code))
+        } else {
+            Err(WaitError::Running)
+        }
+    } else {
+        Err(WaitError::NotFound)
     }
-
-    if answer_status == WaitStatus::Running {
-        axtask::yield_now();
-    }
-
-    if answer_status == WaitStatus::Exited {
-        curr_task.task_ext().children.lock().remove(exit_task_id);
-        return Ok(answer_id);
-    }
-    Err(answer_status)
 }
 
 pub fn exec(name: &str, args: &[String], envs: &[String]) -> AxResult<()> {
