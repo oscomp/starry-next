@@ -85,7 +85,7 @@ fn check_null_terminated<T: PartialEq + Default>(
 
 /// A pointer to user space memory.
 #[repr(transparent)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct UserPtr<T>(*mut T);
 
 impl<T> From<usize> for UserPtr<T> {
@@ -136,7 +136,7 @@ impl<T> UserPtr<T> {
 
 /// An immutable pointer to user space memory.
 #[repr(transparent)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct UserConstPtr<T>(*const T);
 
 impl<T> From<usize> for UserConstPtr<T> {
