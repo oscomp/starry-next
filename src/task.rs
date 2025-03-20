@@ -14,7 +14,10 @@ use core::{
 use memory_addr::VirtAddrRange;
 use spin::Once;
 
-use crate::ctypes::{CloneFlags, TimeStat, WaitStatus};
+use crate::{
+    copy_from_kernel,
+    ctypes::{CloneFlags, TimeStat, WaitStatus},
+};
 use axhal::{
     arch::{TrapFrame, UspaceContext},
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
@@ -101,7 +104,8 @@ impl TaskExt {
 
         let current_task = current();
         let mut current_aspace = current_task.task_ext().aspace.lock();
-        let new_aspace = current_aspace.clone_or_err()?;
+        let mut new_aspace = current_aspace.clone_or_err()?;
+        copy_from_kernel(&mut new_aspace)?;
         new_task
             .ctx_mut()
             .set_page_table_root(new_aspace.page_table_root());
