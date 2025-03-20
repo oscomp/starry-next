@@ -71,7 +71,7 @@ clean: ax_root
 	done
 	@cargo clean
 
-doc_check_missing:
-	@cargo doc --no-deps --all-features --workspace
+doc: defconfig
+	@AX_CONFIG_PATH=$(PWD)/.axconfig.toml cargo doc --no-deps --all-features --workspace
 
 .PHONY: all ax_root build run justrun debug disasm clean test_build
