@@ -6,12 +6,12 @@ use alloc::{
 use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
-use memory_addr::VirtAddrRange;
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
     sync::atomic::{AtomicU64, Ordering},
 };
+use memory_addr::VirtAddrRange;
 use spin::Once;
 
 use crate::ctypes::{CloneFlags, TimeStat, WaitStatus};
@@ -19,7 +19,7 @@ use axhal::{
     arch::{TrapFrame, UspaceContext},
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
 };
-use axmm::{kernel_aspace, AddrSpace};
+use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
 use axsync::Mutex;
 use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
