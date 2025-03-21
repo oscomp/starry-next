@@ -49,8 +49,8 @@ basic_testlist=(
     # "/$LIBC/basic/write"
     # "/$LIBC/basic/openat"
     # "/$LIBC/basic/getdents"
-    # "/$LIBC/basic/mount"
-    # "/$LIBC/basic/umount"
+    "/$LIBC/basic/mount"
+    "/$LIBC/basic/umount"
 )
 busybox_testlist=("/$LIBC/busybox sh /$LIBC/busybox_testcode.sh")
 iozone_testlist=("/$LIBC/busybox sh /$LIBC/iozone_testcode.sh")
