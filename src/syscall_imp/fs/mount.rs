@@ -24,17 +24,17 @@ pub(crate) fn sys_mount(
         debug!("fs_type can only be vfat.");
         return Err(LinuxError::EPERM);
     }
-    // 检查挂载点路径是否存在
+
     if !mount_path.exists() {
         debug!("mount path not exist");
         return Err(LinuxError::EPERM);
     }
-    // 查挂载点是否已经被挂载
+
     if check_mounted(&mount_path) {
         debug!("mount path includes mounted fs");
         return Err(LinuxError::EPERM);
     }
-    // 挂载
+
     if !mount_fat_fs(&device_path, &mount_path) {
         debug!("mount error");
         return Err(LinuxError::EPERM);
@@ -50,12 +50,11 @@ pub(crate) fn sys_umount2(target: *const c_char, flags: i32) -> LinuxResult<isiz
         return Err(LinuxError::EPERM);
     }
 
-    // 检查挂载点路径是否存在
     if !mount_path.exists() {
         debug!("mount path not exist");
         return Err(LinuxError::EPERM);
     }
-    // 从挂载点中删除
+
     if !umount_fat_fs(&mount_path) {
         debug!("umount error");
         return Err(LinuxError::EPERM);
@@ -63,8 +62,8 @@ pub(crate) fn sys_umount2(target: *const c_char, flags: i32) -> LinuxResult<isiz
     Ok(0)
 }
 
-/// 挂载的文件系统。
-/// 目前"挂载"的语义是，把一个文件当作文件系统读写
+/// Mounted File System
+/// "Mount" means read&write a file as a file system now
 pub struct MountedFs {
     //pub inner: Arc<Mutex<FATFileSystem>>,
     pub device: FilePath,
@@ -92,13 +91,14 @@ impl MountedFs {
     }
 }
 
-/// 已挂载的文件系统(设备)。
-/// 注意启动时的文件系统不在这个 vec 里，它在 mod.rs 里。
+/// List of mounted file system
+/// Note that the startup file system is not in the vec, but in mod.rs
 static MOUNTED: Mutex<Vec<MountedFs>> = Mutex::new(Vec::new());
 
-/// 挂载一个fatfs类型的设备
+/// Mount a fatfs device
 pub fn mount_fat_fs(device_path: &FilePath, mount_path: &FilePath) -> bool {
-    // // device_path需要链接转换, mount_path不需要, 因为目前目录没有链接  // 暂时只有Open过的文件会加入到链接表，所以这里先不转换
+    // device_path needs symlink lookup, but mount_path does not
+    // only opened files will be added to the symlink table for now, so do not convert now
     // debug!("mounting {} to {}", device_path.path(), mount_path.path());
     // if let Some(true_device_path) = real_path(device_path) {
     if mount_path.exists() {
@@ -119,7 +119,7 @@ pub fn mount_fat_fs(device_path: &FilePath, mount_path: &FilePath) -> bool {
     false
 }
 
-/// 卸载一个fatfs类型的设备
+/// unmount a fatfs device
 pub fn umount_fat_fs(mount_path: &FilePath) -> bool {
     let mut mounted = MOUNTED.lock();
     let mut i = 0;
@@ -135,7 +135,7 @@ pub fn umount_fat_fs(mount_path: &FilePath) -> bool {
     false
 }
 
-/// 检查一个路径是否已经被挂载
+/// check if a path is mounted
 pub fn check_mounted(path: &FilePath) -> bool {
     let mounted = MOUNTED.lock();
     for m in mounted.iter() {
