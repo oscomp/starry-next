@@ -112,11 +112,11 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::uname => sys_uname(tf.arg0().into()),
         Sysno::fstat => sys_fstat(tf.arg0() as _, tf.arg1().into()),
         Sysno::mount => sys_mount(
-            tf.arg0() as _, 
-            tf.arg1() as _, 
-            tf.arg2() as _, 
-            tf.arg3() as _, 
-            tf.arg4() as _
+            tf.arg0() as _,
+            tf.arg1() as _,
+            tf.arg2() as _,
+            tf.arg3() as _,
+            tf.arg4() as _,
         ) as _,
         Sysno::umount2 => sys_umount2(tf.arg0() as _, tf.arg1() as _) as _,
         #[cfg(target_arch = "x86_64")]
