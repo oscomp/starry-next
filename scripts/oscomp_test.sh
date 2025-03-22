@@ -31,26 +31,38 @@ if [ "$LIBC" != "musl" ] && [ "$LIBC" != "glibc" ]; then
     exit $S_FAILED
 fi
 
-# TODO: add more basic testcases
 basic_testlist=(
     "/$LIBC/basic/brk"
     "/$LIBC/basic/chdir"
+    "/$LIBC/basic/clone"
+    "/$LIBC/basic/close"
+    "/$LIBC/basic/dup2"
+    "/$LIBC/basic/dup"
     "/$LIBC/basic/execve"
+    "/$LIBC/basic/exit"
+    "/$LIBC/basic/fork"
+    "/$LIBC/basic/fstat"
+    "/$LIBC/basic/getcwd"
+    "/$LIBC/basic/getdents"
+    "/$LIBC/basic/getpid"
+    "/$LIBC/basic/getppid"
+    "/$LIBC/basic/gettimeofday"
+    "/$LIBC/basic/mkdir_"
+    "/$LIBC/basic/mmap"
+    "/$LIBC/basic/mount"
+    "/$LIBC/basic/munmap"
+    "/$LIBC/basic/openat"
+    "/$LIBC/basic/open"
     "/$LIBC/basic/pipe"
-    # "/$LIBC/basic/close"
-    # "/$LIBC/basic/dup"
-    # "/$LIBC/basic/dup2"
-    # "/$LIBC/basic/fstat"
-    # "/$LIBC/basic/getcwd"
-    # "/$LIBC/basic/mkdir_"
-    # "/$LIBC/basic/open"
-    # "/$LIBC/basic/read"
-    # "/$LIBC/basic/unlink"
-    # "/$LIBC/basic/write"
-    # "/$LIBC/basic/openat"
-    # "/$LIBC/basic/getdents"
-    # "/$LIBC/basic/mount"
-    # "/$LIBC/basic/umount"
+    "/$LIBC/basic/read"
+    "/$LIBC/basic/times"
+    "/$LIBC/basic/umount"
+    "/$LIBC/basic/uname"
+    "/$LIBC/basic/unlink"
+    "/$LIBC/basic/wait"
+    "/$LIBC/basic/waitpid"
+    "/$LIBC/basic/write"
+    "/$LIBC/basic/yield"
 )
 busybox_testlist=("/$LIBC/busybox sh /$LIBC/busybox_testcode.sh")
 iozone_testlist=("/$LIBC/busybox sh /$LIBC/iozone_testcode.sh")
@@ -77,7 +89,7 @@ fi
 
 cp sdcard-$ARCH.img $AX_ROOT/disk.img
 
-ARG="AX_TESTCASE=oscomp ARCH=$ARCH EXTRA_CONFIG=../configs/$ARCH.toml BLK=y NET=y FEATURES=fp_simd,lwext4_rs SMP=4 ACCEL=n LOG=off"
+ARG="AX_TESTCASE=oscomp ARCH=$ARCH BLK=y NET=y FEATURES=fp_simd,lwext4_rs SMP=4 ACCEL=n LOG=off"
 
 echo -e "${GREEN_C}ARGS:${END_C} $ARG"
 if [ $? -ne 0 ]; then
