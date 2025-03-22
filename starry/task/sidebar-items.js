@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["__ax_task_ext_drop","exec","read_trapframe_from_kstack","spawn_user_task","time_stat_from_kernel_to_user","time_stat_from_user_to_kernel","time_stat_output","wait_pid","write_trapframe_to_kstack"],"static":["__AX_TASK_EXT_ALIGN","__AX_TASK_EXT_SIZE"],"struct":["AxNamespaceImpl","TaskExt"]};

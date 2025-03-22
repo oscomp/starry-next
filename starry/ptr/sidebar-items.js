@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_null_terminated","check_region"],"struct":["UserConstPtr","UserPtr"],"trait":["PtrWrapper"]};

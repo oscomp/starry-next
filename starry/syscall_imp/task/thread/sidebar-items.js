@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ArchPrctlCode"],"fn":["sys_arch_prctl","sys_clone","sys_execve","sys_exit","sys_exit_group","sys_getpid","sys_getppid","sys_set_tid_address","sys_wait4"]};

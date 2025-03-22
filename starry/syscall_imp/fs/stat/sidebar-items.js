@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["sys_fstat","sys_fstatat","sys_statx"],"struct":["FsStatxTimestamp","Kstat","StatX"]};

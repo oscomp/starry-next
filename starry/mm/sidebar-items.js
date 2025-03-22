@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["access_user_memory","handle_page_fault","load_user_app","map_elf"],"static":["ACCESSING_USER_MEM","_LINKME_ELEMENT_handle_page_fault","__PERCPU_ACCESSING_USER_MEM"],"struct":["ACCESSING_USER_MEM_WRAPPER"]};

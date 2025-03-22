@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["starry",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"starry/ctypes/struct.TimeStat.html\" title=\"struct starry::ctypes::TimeStat\">TimeStat</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"starry/syscall_imp/fs/stat/struct.FsStatxTimestamp.html\" title=\"struct starry::syscall_imp::fs::stat::FsStatxTimestamp\">FsStatxTimestamp</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"starry/syscall_imp/fs/stat/struct.Kstat.html\" title=\"struct starry::syscall_imp::fs::stat::Kstat\">Kstat</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"starry/syscall_imp/fs/stat/struct.StatX.html\" title=\"struct starry::syscall_imp::fs::stat::StatX\">StatX</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"starry/syscall_imp/sys/struct.UtsName.html\" title=\"struct starry::syscall_imp::sys::UtsName\">UtsName</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1503]}
