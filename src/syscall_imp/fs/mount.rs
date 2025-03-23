@@ -11,7 +11,7 @@ pub fn sys_mount(
     target: UserConstPtr<c_char>,
     fs_type: UserConstPtr<c_char>,
     _flags: i32,
-    _data: *const c_void,
+    _data: UserConstPtr<c_void>,
 ) -> LinuxResult<isize> {
     info!("sys_mount");
     let source = source.get_as_null_terminated()?;
@@ -128,11 +128,7 @@ pub fn umount_fat_fs(mount_path: &FilePath) -> bool {
     let mut mounted = MOUNTED.lock();
     let length_before_deletion = mounted.len();
     mounted.retain(|m| m.mnt_dir() != *mount_path);
-    if length_before_deletion > mounted.len() {
-        return true;
-    }
-    info!("umount failed: {}", mount_path.as_str());
-    false
+    length_before_deletion > mounted.len()
 }
 
 /// check if a path is mounted

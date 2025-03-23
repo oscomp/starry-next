@@ -116,7 +116,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg1().into(),
             tf.arg2().into(),
             tf.arg3() as _,
-            tf.arg4() as _,
+            tf.arg4().into()
         ) as _,
         Sysno::umount2 => sys_umount2(tf.arg0().into(), tf.arg1() as _) as _,
         #[cfg(target_arch = "x86_64")]
