@@ -1,1 +1,1 @@
-/musl/basic/waitpid
+/musl/runtest.exe -w entry-static.exe utime

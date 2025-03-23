@@ -2,7 +2,11 @@ import json
 import sys
 
 # TODO: Add more commands to test here
-libctest_baseline = """"""
+libctest_baseline = """
+========== START entry-static.exe utime ==========
+Pass!
+========== END entry-static.exe utime ==========
+"""
 
 def parse_libctest(output):
     ans = {}
@@ -12,7 +16,7 @@ def parse_libctest(output):
             key = "libctest static " + line.split(" ")[3]
         elif "START entry-dynamic.exe" in line:
             key = "libctest dynamic " + line.split(" ")[3]
-        if line == "Pass!" and key != "":
+        if line.startswith("Pass!") and key != "":
             ans[key] = 1
     return ans
 
