@@ -1,20 +1,24 @@
 use alloc::vec::Vec;
-use arceos_posix_api::{AT_FDCWD, FilePath, char_ptr_to_str, handle_file_path};
+use arceos_posix_api::{AT_FDCWD, FilePath, handle_file_path};
 use axerrno::{LinuxError, LinuxResult};
 use axsync::Mutex;
 use core::ffi::{c_char, c_void};
 
-pub(crate) fn sys_mount(
-    source: *const c_char,
-    target: *const c_char,
-    fs_type: *const c_char,
+use crate::ptr::UserConstPtr;
+
+pub fn sys_mount(
+    source: UserConstPtr<c_char>,
+    target: UserConstPtr<c_char>,
+    fs_type: UserConstPtr<c_char>,
     _flags: i32,
     _data: *const c_void,
 ) -> LinuxResult<isize> {
     info!("sys_mount");
-    let device_path = handle_file_path(AT_FDCWD, Some(source as _), false)?;
-    let mount_path = handle_file_path(AT_FDCWD, Some(target as _), true)?;
-    let fs_type = char_ptr_to_str(fs_type)?;
+    let source = source.get_as_null_terminated()?;
+    let target = target.get_as_null_terminated()?;
+    let fs_type = fs_type.get_as_str()?;
+    let device_path = handle_file_path(AT_FDCWD, Some(source.as_ptr() as _), false)?;
+    let mount_path = handle_file_path(AT_FDCWD, Some(target.as_ptr() as _), true)?;
     info!(
         "mount {:?} to {:?} with fs_type={:?}",
         device_path, mount_path, fs_type
@@ -42,9 +46,10 @@ pub(crate) fn sys_mount(
     Ok(0)
 }
 
-pub(crate) fn sys_umount2(target: *const c_char, flags: i32) -> LinuxResult<isize> {
-    info!("sys_mount");
-    let mount_path = handle_file_path(AT_FDCWD, Some(target as _), true)?;
+pub fn sys_umount2(target: UserConstPtr<c_char>, flags: i32) -> LinuxResult<isize> {
+    info!("sys_umount2");
+    let target = target.get_as_null_terminated()?;
+    let mount_path = handle_file_path(AT_FDCWD, Some(target.as_ptr() as _), true)?;
     if flags != 0 {
         debug!("flags unimplemented");
         return Err(LinuxError::EPERM);
@@ -110,7 +115,6 @@ pub fn mount_fat_fs(device_path: &FilePath, mount_path: &FilePath) -> bool {
         );
         return true;
     }
-    // }
     info!(
         "mount failed: {} to {}",
         device_path.as_str(),
@@ -122,14 +126,10 @@ pub fn mount_fat_fs(device_path: &FilePath, mount_path: &FilePath) -> bool {
 /// unmount a fatfs device
 pub fn umount_fat_fs(mount_path: &FilePath) -> bool {
     let mut mounted = MOUNTED.lock();
-    let mut i = 0;
-    while i < mounted.len() {
-        if mounted[i].mnt_dir() == *mount_path {
-            mounted.remove(i);
-            info!("umounted {}", mount_path.as_str());
-            return true;
-        }
-        i += 1;
+    let length_before_deletion = mounted.len();
+    mounted.retain(|m| m.mnt_dir() != *mount_path);
+    if length_before_deletion > mounted.len() {
+        return true;
     }
     info!("umount failed: {}", mount_path.as_str());
     false
@@ -138,11 +138,5 @@ pub fn umount_fat_fs(mount_path: &FilePath) -> bool {
 /// check if a path is mounted
 pub fn check_mounted(path: &FilePath) -> bool {
     let mounted = MOUNTED.lock();
-    for m in mounted.iter() {
-        if path.starts_with(&m.mnt_dir()) {
-            debug!("{} is mounted", path.as_str());
-            return true;
-        }
-    }
-    false
+    mounted.iter().any(|m| path.starts_with(&m.mnt_dir()))
 }
