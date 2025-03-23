@@ -1,1 +1,1 @@
-/musl/busybox sh /musl/libctest_testcode.sh
+/musl/runtest.exe -w entry-static.exe utime
