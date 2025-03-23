@@ -1,7 +1,7 @@
 use core::ffi::{c_char, c_void};
 
 use alloc::string::ToString;
-use arceos_posix_api::AT_FDCWD;
+use arceos_posix_api::{AT_FDCWD, ctypes::timespec};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use macro_rules_attribute::apply;
 
@@ -295,4 +295,79 @@ pub fn sys_unlinkat(dir_fd: isize, path: UserConstPtr<c_char>, flags: usize) -> 
 
 pub fn sys_getcwd(buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
     Ok(arceos_posix_api::sys_getcwd(buf.get_as_null_terminated()?.as_ptr() as _, size) as _)
+}
+
+/// when nsec is UTIME_NOW，modify time to now
+pub const UTIME_NOW: usize = 0x3fffffff;
+/// when nsec is UTIME_OMIT，donot modify time
+pub const UTIME_OMIT: usize = 0x3ffffffe;
+
+/// Modify the timestamp of file or dir
+/// if fir_fd < 0, it determines the file together with path
+/// if fir_fd >=0, it is the fd of the file
+/// nsec is omited except for special values now
+pub fn sys_utimensat(
+    dir_fd: i32,
+    path: UserConstPtr<c_char>,
+    times: UserConstPtr<timespec>,
+    _flags: i32,
+) -> LinuxResult<isize> {
+    if dir_fd != AT_FDCWD as _ && (dir_fd as isize) < 0 {
+        return Err(LinuxError::EBADF); // wrong dir_fd
+    }
+
+    let times = times.get_as_array(2)?;
+    let (atime, mtime): (timespec, timespec) = unsafe { (*times, *(times.add(1))) };
+    // FIXME: this is time elapsed since system boot, but not timestamp now
+    let current_s = axhal::time::monotonic_time_nanos() as i64 / 1000 / 1000;
+    let now = current_s as usize;
+    info!(
+        "sys_utimensat: dir_fd={}; atime=({}, {}); mtime=({}, {}); now={}",
+        dir_fd, atime.tv_sec, atime.tv_nsec, mtime.tv_sec, mtime.tv_nsec, now
+    );
+    // TODO: simplify the code
+    if (dir_fd as isize) > 0 {
+        let file = arceos_posix_api::get_file_like(dir_fd as _)?;
+        match atime.tv_nsec as _ {
+            UTIME_NOW => {
+                _ = file.set_atime(now);
+            }
+            UTIME_OMIT => {}
+            _ => {
+                _ = file.set_atime(atime.tv_sec as _);
+            }
+        };
+        match mtime.tv_nsec as _ {
+            UTIME_NOW => {
+                _ = file.set_mtime(now);
+            }
+            UTIME_OMIT => {}
+            _ => {
+                _ = file.set_mtime(mtime.tv_sec as _);
+            }
+        };
+    } else {
+        let file = axfs::fops::File::open(path.get_as_str()?, &axfs::fops::OpenOptions::new())
+            .map_err(|_| LinuxError::ENOTDIR)?;
+        match atime.tv_nsec as _ {
+            UTIME_NOW => {
+                _ = file.set_atime(now);
+            }
+            UTIME_OMIT => {}
+            _ => {
+                _ = file.set_atime(atime.tv_sec as _);
+            }
+        };
+        match mtime.tv_nsec as _ {
+            UTIME_NOW => {
+                _ = file.set_mtime(now);
+            }
+            UTIME_OMIT => {}
+            _ => {
+                _ = file.set_mtime(mtime.tv_sec as _);
+            }
+        };
+    };
+
+    Ok(0)
 }

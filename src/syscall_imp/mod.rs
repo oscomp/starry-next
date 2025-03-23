@@ -52,6 +52,11 @@ macro_rules! syscall_instrument {(
 )}
 pub(crate) use syscall_instrument;
 
+fn ignore_unimplemented_syscall(syscall_num: usize) -> LinuxResult<isize> {
+    warn!("Ignored unimplemented syscall: {}", syscall_num);
+    Ok(0)
+}
+
 #[register_trap_handler(SYSCALL)]
 fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
     info!("Syscall {:?}", Sysno::from(syscall_num as u32));
@@ -111,6 +116,12 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::unlinkat => sys_unlinkat(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::uname => sys_uname(tf.arg0().into()),
         Sysno::fstat => sys_fstat(tf.arg0() as _, tf.arg1().into()),
+        Sysno::utimensat => sys_utimensat(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3() as _,
+        ),
         #[cfg(target_arch = "x86_64")]
         Sysno::newfstatat => sys_fstatat(
             tf.arg0() as _,
@@ -154,6 +165,9 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg2().into(),
             tf.arg3() as _,
         ),
+        Sysno::gettid | Sysno::statfs | Sysno::rt_sigtimedwait | Sysno::prlimit64 => {
+            ignore_unimplemented_syscall(syscall_num)
+        }
         _ => {
             warn!("Unimplemented syscall: {}", syscall_num);
             axtask::exit(LinuxError::ENOSYS as _)
