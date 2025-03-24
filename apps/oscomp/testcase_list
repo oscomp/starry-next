@@ -1,1 +1,1 @@
-/musl/runtest.exe -w entry-static.exe argv
+/musl/basic/waitpid

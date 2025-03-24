@@ -9,13 +9,3 @@ apps/*/build/
 **/Cargo.lock
 !/vendor/**/Cargo.lock
 /.axconfig.*
-/sdcard-la.img
-/sdcard-rv.img
-/sdcard-x86_64.img
-/sdcard-aarch64.img
-/riscv64-linux-musl-cross
-/x86_64-linux-musl-cross
-/aarch64-linux-musl-cross
-/gcc-13.2.0-loongarch64-linux-gnu
-/musl-loongarch64-1.2.2
-/apps/tests
