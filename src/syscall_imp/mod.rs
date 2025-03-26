@@ -140,6 +140,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg3() as _,
             tf.arg4().into(),
         ),
+        Sysno::statfs => sys_statfs(tf.arg0().into(), tf.arg1().into()),
         Sysno::munmap => sys_munmap(tf.arg0().into(), tf.arg1() as _),
         Sysno::mprotect => sys_mprotect(tf.arg0().into(), tf.arg1() as _, tf.arg2() as _),
         Sysno::times => sys_times(tf.arg0().into()),
