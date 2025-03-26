@@ -15,8 +15,8 @@ use memory_addr::VirtAddrRange;
 use spin::Once;
 
 use crate::{
-    init_user_aspace,
     ctypes::{CloneFlags, TimeStat, WaitStatus},
+    init_user_aspace,
     signal::SignalManager,
 };
 use axhal::{
@@ -107,7 +107,9 @@ impl TaskExt {
         );
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            new_task.ctx_mut().set_tls(axhal::arch::read_thread_pointer().into());
+            new_task
+                .ctx_mut()
+                .set_tls(axhal::arch::read_thread_pointer().into());
         }
 
         let current_task = current();
