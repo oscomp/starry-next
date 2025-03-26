@@ -105,6 +105,10 @@ impl TaskExt {
             current().id_name(),
             axconfig::plat::KERNEL_STACK_SIZE,
         );
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            new_task.ctx_mut().set_tls(axhal::arch::read_thread_pointer().into());
+        }
 
         let current_task = current();
         let mut current_aspace = current_task.task_ext().aspace.lock();
