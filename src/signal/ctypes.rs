@@ -97,7 +97,8 @@ impl SignalAction {
             }
             SignalDisposition::Ignore => {
                 // SAFETY: SIG_IGN is 1
-                dest.handler = Some(unsafe { mem::transmute(1usize) });
+                dest.handler =
+                    Some(unsafe { mem::transmute::<usize, unsafe extern "C" fn(i32)>(1) });
             }
             SignalDisposition::Handler(handler) => {
                 dest.handler = Some(*handler);

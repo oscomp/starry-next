@@ -205,7 +205,7 @@ fn handle_any_trap(tf: &mut TrapFrame, from_user: bool) -> bool {
                 #[cfg(not(target_arch = "x86_64"))]
                 tf.set_ra(restorer);
 
-                let mut mask = action.mask.clone();
+                let mut mask = action.mask;
                 if !action.flags.contains(SignalActionFlags::NODEFER) {
                     mask.add(signo);
                 }

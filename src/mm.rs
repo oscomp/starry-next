@@ -9,7 +9,7 @@ use axhal::{
 };
 
 use axmm::AddrSpace;
-use axtask::{TaskExtMut, TaskExtRef};
+use axtask::TaskExtRef;
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
