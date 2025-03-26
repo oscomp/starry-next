@@ -44,6 +44,11 @@ pub fn sys_getppid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().get_parent() as _)
 }
 
+#[apply(syscall_instrument)]
+pub fn sys_gettid() -> LinuxResult<isize> {
+    Ok(current().id().as_u64() as _)
+}
+
 pub fn sys_exit(status: i32) -> ! {
     let curr = current();
     let clear_child_tid = curr.task_ext().clear_child_tid() as *mut i32;

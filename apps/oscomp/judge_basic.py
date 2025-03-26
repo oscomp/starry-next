@@ -451,7 +451,17 @@ def get_runner(name):
 target_testcases = [
     "test_brk",
     "test_chdir",
+    "test_clone",
+    "test_getpid",
+    "test_getppid",
+    "test_exit",
+    "test_wait",
     "test_execve",
+    "test_waitpid",
+    "test_yield",
+    "test_gettimeofday",
+    "test_sleep",
+    "test_times"
     "test_pipe",
     "test_close",
     "test_dup",

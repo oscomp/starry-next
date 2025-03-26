@@ -69,6 +69,8 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::ioctl => sys_ioctl(tf.arg0() as _, tf.arg1() as _, tf.arg2().into()),
         Sysno::writev => sys_writev(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
+        Sysno::prlimit64 => Ok(0),
+        Sysno::rt_sigtimedwait => Ok(0),
         Sysno::sched_yield => sys_sched_yield(),
         Sysno::nanosleep => sys_nanosleep(tf.arg0().into(), tf.arg1().into()),
         Sysno::getpid => sys_getpid(),
@@ -150,6 +152,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::clock_gettime => sys_clock_gettime(tf.arg0() as _, tf.arg1().into()),
         Sysno::exit_group => sys_exit_group(tf.arg0() as _),
         Sysno::getuid => sys_getuid(),
+        Sysno::gettid => sys_gettid(),
         Sysno::rt_sigprocmask => sys_rt_sigprocmask(
             tf.arg0() as _,
             tf.arg1().into(),
