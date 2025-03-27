@@ -37,29 +37,28 @@ unsafe extern "C" {
 }
 
 /// If the target architecture requires it, the kernel portion of the address
-/// space will be copied to the user address space. Signal trampoline will also
-/// be mapped.
-fn init_user_aspace(aspace: &mut AddrSpace) -> AxResult {
+/// space will be copied to the user address space.
+fn copy_from_kernel(aspace: &mut AddrSpace) -> AxResult {
     if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
         // ARMv8 (aarch64) and LoongArch64 use separate page tables for user space
         // (aarch64: TTBR0_EL1, LoongArch64: PGDL), so there is no need to copy the
         // kernel portion to the user page table.
         aspace.copy_mappings_from(&kernel_aspace().lock())?;
     }
-    let signal_trampoline_paddr = virt_to_phys((start_signal_trampoline as usize).into());
-    aspace.map_linear(
-        axconfig::plat::SIGNAL_TRAMPOLINE.into(),
-        signal_trampoline_paddr,
-        PAGE_SIZE_4K,
-        MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
-    )?;
     Ok(())
 }
 
 fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let mut uspace = new_user_aspace_empty()
         .and_then(|mut it| {
-            init_user_aspace(&mut it)?;
+            copy_from_kernel(&mut it)?;
+            let signal_trampoline_paddr = virt_to_phys((start_signal_trampoline as usize).into());
+            it.map_linear(
+                axconfig::plat::SIGNAL_TRAMPOLINE.into(),
+                signal_trampoline_paddr,
+                PAGE_SIZE_4K,
+                MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
+            )?;
             Ok(it)
         })
         .expect("Failed to create user address space");
