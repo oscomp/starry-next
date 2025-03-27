@@ -15,8 +15,8 @@ use memory_addr::VirtAddrRange;
 use spin::Once;
 
 use crate::{
-    ctypes::{CloneFlags, TimeStat, WaitStatus},
     copy_from_kernel,
+    ctypes::{CloneFlags, TimeStat, WaitStatus},
     signal::SignalManager,
 };
 use axhal::{
