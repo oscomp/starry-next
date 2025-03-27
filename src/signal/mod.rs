@@ -150,9 +150,9 @@ pub struct SignalFrame {
 }
 
 #[register_trap_handler(ANY_TRAP)]
-fn handle_any_trap(tf: &mut TrapFrame, from_user: bool) -> bool {
+fn handle_any_trap(tf: &mut TrapFrame, from_user: bool) {
     if !from_user {
-        return false;
+        return;
     }
 
     let curr = current();
@@ -213,8 +213,6 @@ fn handle_any_trap(tf: &mut TrapFrame, from_user: bool) -> bool {
             }
         }
     }
-
-    true
 }
 
 pub fn sigreturn(tf: &mut TrapFrame) {
