@@ -53,8 +53,7 @@ macro_rules! syscall_instrument {(
 pub(crate) use syscall_instrument;
 
 #[register_trap_handler(SYSCALL)]
-fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
-    info!("Syscall {:?}", Sysno::from(syscall_num as u32));
+fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
     time_stat_from_user_to_kernel();
     let result: LinuxResult<isize> = match Sysno::from(syscall_num as u32) {
         Sysno::read => sys_read(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
@@ -86,6 +85,8 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg3() as _,
             tf.arg4() as _,
         ),
+        #[cfg(target_arch = "x86_64")]
+        Sysno::fork => sys_clone(17 /* SIGCHLD */, 0, 0, 0, 0),
         Sysno::wait4 => sys_wait4(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::pipe2 => sys_pipe2(tf.arg0().into()),
         Sysno::close => sys_close(tf.arg0() as _),
@@ -150,6 +151,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::clock_gettime => sys_clock_gettime(tf.arg0() as _, tf.arg1().into()),
         Sysno::exit_group => sys_exit_group(tf.arg0() as _),
         Sysno::getuid => sys_getuid(),
+        Sysno::kill => sys_kill(tf.arg0() as _, tf.arg1() as _),
         Sysno::rt_sigprocmask => sys_rt_sigprocmask(
             tf.arg0() as _,
             tf.arg1().into(),
@@ -162,6 +164,8 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg2().into(),
             tf.arg3() as _,
         ),
+        Sysno::rt_sigreturn => sys_rt_sigreturn(tf),
+        Sysno::rt_sigpending => sys_rt_sigpending(tf.arg0().into(), tf.arg1() as _),
         _ => {
             warn!("Unimplemented syscall: {}", syscall_num);
             axtask::exit(LinuxError::ENOSYS as _)

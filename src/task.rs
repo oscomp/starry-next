@@ -17,6 +17,7 @@ use spin::Once;
 use crate::{
     copy_from_kernel,
     ctypes::{CloneFlags, TimeStat, WaitStatus},
+    signal::SignalManager,
 };
 use axhal::{
     arch::{TrapFrame, UspaceContext},
@@ -24,7 +25,7 @@ use axhal::{
 };
 use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
-use axsync::Mutex;
+use axsync::{Mutex, spin::SpinNoIrq};
 use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
 
 /// Task extended data for the monolithic kernel.
@@ -53,6 +54,8 @@ pub struct TaskExt {
     pub heap_bottom: AtomicU64,
     /// The user heap top
     pub heap_top: AtomicU64,
+    // The signal manager
+    pub signal: SpinNoIrq<SignalManager>,
 }
 
 impl TaskExt {
@@ -73,6 +76,7 @@ impl TaskExt {
             time: TimeStat::new().into(),
             heap_bottom: AtomicU64::new(heap_bottom),
             heap_top: AtomicU64::new(heap_bottom),
+            signal: SpinNoIrq::new(SignalManager::new()),
         }
     }
 
@@ -92,8 +96,8 @@ impl TaskExt {
                 let kstack_top = curr.kernel_stack_top().unwrap();
                 info!(
                     "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                    curr.task_ext().uctx.get_ip(),
-                    curr.task_ext().uctx.get_sp(),
+                    curr.task_ext().uctx.trap_frame().ip(),
+                    curr.task_ext().uctx.trap_frame().sp(),
                     kstack_top,
                 );
                 unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };
@@ -101,6 +105,10 @@ impl TaskExt {
             current().id_name(),
             axconfig::plat::KERNEL_STACK_SIZE,
         );
+        #[cfg(target_arch = "x86_64")]
+        new_task
+            .ctx_mut()
+            .set_tls(axhal::arch::read_thread_pointer().into());
 
         let current_task = current();
         let mut current_aspace = current_task.task_ext().aspace.lock();
@@ -110,15 +118,16 @@ impl TaskExt {
             .ctx_mut()
             .set_page_table_root(new_aspace.page_table_root());
 
-        let trap_frame = read_trapframe_from_kstack(current_task.get_kernel_stack_top().unwrap());
-        let mut new_uctx = UspaceContext::from(&trap_frame);
+        let mut trap_frame =
+            read_trapframe_from_kstack(current_task.get_kernel_stack_top().unwrap());
         if let Some(stack) = stack {
-            new_uctx.set_sp(stack);
+            trap_frame.set_sp(stack);
         }
         // Skip current instruction
         #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-        new_uctx.set_ip(new_uctx.get_ip() + 4);
-        new_uctx.set_retval(0);
+        trap_frame.set_ip(trap_frame.ip() + 4);
+        trap_frame.set_retval(0);
+        let new_uctx = UspaceContext::from(&trap_frame);
         let return_id: u64 = new_task.id().as_u64();
         let new_task_ext = TaskExt::new(
             return_id as usize,
@@ -249,8 +258,8 @@ pub fn spawn_user_task(
             let kstack_top = curr.kernel_stack_top().unwrap();
             info!(
                 "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                curr.task_ext().uctx.get_ip(),
-                curr.task_ext().uctx.get_sp(),
+                curr.task_ext().uctx.trap_frame().ip(),
+                curr.task_ext().uctx.trap_frame().sp(),
                 kstack_top,
             );
             unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };

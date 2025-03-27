@@ -10,6 +10,7 @@ mod ctypes;
 
 mod mm;
 mod ptr;
+mod signal;
 mod syscall_imp;
 mod task;
 
@@ -19,16 +20,20 @@ use alloc::{
     vec::Vec,
 };
 use axerrno::AxResult;
-use axhal::arch::UspaceContext;
+use axhal::{arch::UspaceContext, mem::virt_to_phys, paging::MappingFlags};
 use axmm::{AddrSpace, kernel_aspace};
 use axsync::Mutex;
-use memory_addr::VirtAddr;
+use memory_addr::{PAGE_SIZE_4K, VirtAddr};
 
 fn new_user_aspace_empty() -> AxResult<AddrSpace> {
     AddrSpace::new_empty(
         VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
         axconfig::plat::USER_SPACE_SIZE,
     )
+}
+
+unsafe extern "C" {
+    fn start_signal_trampoline();
 }
 
 /// If the target architecture requires it, the kernel portion of the address
@@ -47,6 +52,13 @@ fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let mut uspace = new_user_aspace_empty()
         .and_then(|mut it| {
             copy_from_kernel(&mut it)?;
+            let signal_trampoline_paddr = virt_to_phys((start_signal_trampoline as usize).into());
+            it.map_linear(
+                axconfig::plat::SIGNAL_TRAMPOLINE.into(),
+                signal_trampoline_paddr,
+                PAGE_SIZE_4K,
+                MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
+            )?;
             Ok(it)
         })
         .expect("Failed to create user address space");

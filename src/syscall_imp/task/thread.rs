@@ -119,6 +119,10 @@ pub fn sys_clone(
     arg3: usize,
     arg4: usize,
 ) -> LinuxResult<isize> {
+    info!(
+        "sys_clone: flags: {:x}, user_stack: {:x}, ptid: {:x}, arg3: {:x}, arg4: {:x}",
+        flags, user_stack, ptid, arg3, arg4
+    );
     let tls = arg3;
     let ctid = arg4;
 
