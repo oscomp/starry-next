@@ -2,7 +2,7 @@ pub mod ctypes;
 
 use core::alloc::Layout;
 
-use axhal::{arch::TrapFrame, trap::ANY_TRAP};
+use axhal::{arch::TrapFrame, trap::POST_TRAP};
 use axtask::{TaskExtRef, current, exit};
 use ctypes::{SignalAction, SignalActionFlags, SignalDisposition, SignalInfo, SignalSet};
 use linkme::distributed_slice as register_trap_handler;
@@ -149,8 +149,8 @@ pub struct SignalFrame {
     siginfo: SignalInfo,
 }
 
-#[register_trap_handler(ANY_TRAP)]
-fn handle_any_trap(tf: &mut TrapFrame, from_user: bool) {
+#[register_trap_handler(POST_TRAP)]
+fn handle_post_trap(tf: &mut TrapFrame, from_user: bool) {
     if !from_user {
         return;
     }
