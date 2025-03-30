@@ -1,14 +1,17 @@
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 void test_term() {
   if (fork() == 0) {
     kill(getpid(), SIGTERM);
-    puts("This should not be printed");
+    while (1)
+      ;
   }
-  wait(0);
+  wait(NULL);
   puts("test_term ok");
 }
 
@@ -83,10 +86,96 @@ void test_sigkill_stop() {
   }
 }
 
+void test_sigwait() {
+  int pid = fork();
+  if (pid == 0) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    sigprocmask(SIG_BLOCK, &set, NULL);
+    int sig;
+    sigwait(&set, &sig);
+    if (sig == SIGTERM) {
+      puts("test_sigwait ok1");
+    }
+    exit(0);
+  }
+  sleep(1);
+  kill(pid, SIGTERM);
+  wait(NULL);
+  puts("test_sigwait ok2");
+
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGTERM);
+  sigprocmask(SIG_BLOCK, &set, NULL);
+  struct timespec ts = {1, 0};
+  if (sigtimedwait(&set, NULL, &ts) < 0 && errno == EAGAIN) {
+    puts("test_sigwait ok3");
+  }
+  sigprocmask(SIG_UNBLOCK, &set, NULL);
+}
+
+static void signal_handler2(int signum) {
+  puts("test_sigsuspend ok1");
+}
+static void signal_handler3(int signum) {
+  puts("test_sigsuspend ok3");
+}
+void test_sigsuspend() {
+  int pid = fork();
+  if (pid == 0) {
+    struct sigaction sa = {0};
+    sa.sa_handler = signal_handler2;
+    sa.sa_flags = 0;
+    sigaction(SIGUSR1, &sa, NULL);
+
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    sigsuspend(&set);
+    // SIGTERM is handled immediately after so this won't run
+    // To ensure it, we check this return code below
+    exit(0);
+  }
+  sleep(1);
+  kill(pid, SIGTERM);
+  sleep(1);
+  kill(pid, SIGUSR1);
+  int status;
+  wait(&status);
+  if (status != 0) {
+    puts("test_sigsuspend ok2");
+  }
+
+  pid = fork();
+  if (pid == 0) {
+    // Ignore SIGTERM
+    struct sigaction sa = {0};
+    sa.sa_handler = (void (*)(int))1;
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, NULL);
+
+    sa.sa_handler = signal_handler3;
+    sigaction(SIGUSR1, &sa, NULL);
+
+    sigset_t set;
+    sigemptyset(&set);
+    sigsuspend(&set);
+    exit(0);
+  }
+  sleep(1);
+  kill(pid, SIGTERM); // SIGTERM is ignored so sigsuspend won't unblock
+  sleep(1);
+  kill(pid, SIGUSR1);
+}
+
 int main() {
-  // test_term();
+  test_term();
   test_sigaction();
   test_sigprocmask();
   test_sigkill_stop();
+  test_sigwait();
+  test_sigsuspend();
   return 0;
 }

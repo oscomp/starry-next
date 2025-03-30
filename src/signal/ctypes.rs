@@ -1,4 +1,4 @@
-use core::mem;
+use core::{mem, ops::Not};
 
 use arceos_posix_api as api;
 use axerrno::LinuxError;
@@ -33,6 +33,18 @@ impl SignalSet {
         self.bits[0] |= bit;
         true
     }
+    pub fn remove(&mut self, signal: u32) -> bool {
+        if !(1..32).contains(&signal) {
+            return false;
+        }
+        let bit = 1 << (signal - 1);
+        if self.bits[0] & bit == 0 {
+            return false;
+        }
+        self.bits[0] &= !bit;
+        true
+    }
+
     pub fn has(&self, signal: u32) -> bool {
         (1..32).contains(&signal) && (self.bits[0] & (1 << (signal - 1))) != 0
     }
@@ -46,14 +58,25 @@ impl SignalSet {
         self.bits[1] &= !other.bits[1];
     }
 
+    /// Dequeue the a signal in `mask` from this set, if any.
     pub fn dequeue(&mut self, mask: &SignalSet) -> Option<u32> {
-        let bits = self.bits[0] & !mask.bits[0];
+        let bits = self.bits[0] & mask.bits[0];
         if bits == 0 {
             None
         } else {
             let signal = bits.trailing_zeros();
             self.bits[0] &= !(1 << signal);
             Some(signal + 1)
+        }
+    }
+}
+
+impl Not for SignalSet {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        Self {
+            bits: [!self.bits[0], !self.bits[1]],
         }
     }
 }

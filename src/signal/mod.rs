@@ -2,8 +2,9 @@ pub mod ctypes;
 
 use core::alloc::Layout;
 
+use alloc::sync::Arc;
 use axhal::{arch::TrapFrame, trap::POST_TRAP};
-use axtask::{TaskExtRef, current, exit};
+use axtask::{TaskExtRef, WaitQueue, current, exit};
 use ctypes::{SignalAction, SignalActionFlags, SignalDisposition, SignalInfo, SignalSet};
 use linkme::distributed_slice as register_trap_handler;
 
@@ -105,8 +106,23 @@ pub struct SignalManager {
     actions: [SignalAction; 32],
 
     /// The pending signals.
+    ///
+    /// Note that does not correspond to `pending signals` as described in
+    /// Linux. `Pending signals` in Linux refers to the signals that are
+    /// delivered but blocked from delivery, while `pending` here refers to any
+    /// signal that is delivered and not yet handled.
     pub pending: SignalSet,
     pending_info: [Option<SignalInfo>; 32],
+
+    /// The signals the task is currently waiting for. Used by
+    /// `sys_rt_sigtimedwait`.
+    pub waiting: SignalSet,
+    pub wq: Arc<WaitQueue>,
+
+    /// If this is true, no more custom signal handler function should be
+    /// written to the trap frame, until it is set back to false at the end of
+    /// [`post_trap_callback`].
+    pub prevent_signal_handling: bool,
 }
 impl SignalManager {
     pub fn new() -> Self {
@@ -116,6 +132,11 @@ impl SignalManager {
 
             pending: SignalSet::default(),
             pending_info: Default::default(),
+
+            waiting: SignalSet::default(),
+            wq: Arc::new(WaitQueue::new()),
+
+            prevent_signal_handling: false,
         }
     }
 
@@ -125,6 +146,9 @@ impl SignalManager {
             return false;
         }
         self.pending_info[signo as usize] = Some(sig);
+        if self.waiting.has(signo) {
+            self.wq.notify_one(false);
+        }
         true
     }
 
@@ -135,32 +159,26 @@ impl SignalManager {
         &self.actions[signo as usize]
     }
 
-    /// Dequeue the next pending signal.
-    pub fn dequeue_signal(&mut self) -> Option<SignalInfo> {
+    /// Dequeue the next pending signal contained in `mask`, if any.
+    pub fn dequeue_signal_in(&mut self, mask: &SignalSet) -> Option<SignalInfo> {
         self.pending
-            .dequeue(&self.blocked)
+            .dequeue(mask)
             .and_then(|signo| self.pending_info[signo as usize].take())
     }
-}
 
-pub struct SignalFrame {
-    tf: TrapFrame,
-    blocked: SignalSet,
-    siginfo: SignalInfo,
-}
-
-#[register_trap_handler(POST_TRAP)]
-fn handle_post_trap(tf: &mut TrapFrame, from_user: bool) {
-    if !from_user {
-        return;
+    /// Dequeue the next non-blocked pending signal.
+    pub fn dequeue_signal(&mut self) -> Option<SignalInfo> {
+        self.dequeue_signal_in(&!self.blocked)
     }
 
-    let curr = current();
-    let mut sigman = curr.task_ext().signal.lock();
-    while let Some(sig) = sigman.dequeue_signal() {
+    /// Run the signal handler for the given signal.
+    ///
+    /// Returns `true` if the process should be terminated or a signal handler
+    /// should be executed.
+    pub fn run_action(&mut self, tf: &mut TrapFrame, sig: SignalInfo) -> bool {
         let signo = sig.signo();
         info!("Handle signal: {}", signo);
-        let action = &sigman.actions[signo as usize];
+        let action = &self.actions[signo as usize];
         match action.disposition {
             SignalDisposition::Default => match DEFAULT_ACTIONS[signo as usize] {
                 DefaultSignalAction::Terminate => exit(128 + signo as i32),
@@ -172,12 +190,13 @@ fn handle_post_trap(tf: &mut TrapFrame, from_user: bool) {
                     warn!("Stop not implemented");
                     exit(-1);
                 }
-                DefaultSignalAction::Ignore => {}
+                DefaultSignalAction::Ignore => false,
                 DefaultSignalAction::Continue => {
                     warn!("Continue not implemented");
+                    true
                 }
             },
-            SignalDisposition::Ignore => {}
+            SignalDisposition::Ignore => false,
             SignalDisposition::Handler(handler) => {
                 let layout = Layout::new::<SignalFrame>();
                 let aligned_sp = (tf.sp() - layout.size()) & !(layout.align() - 1);
@@ -189,7 +208,7 @@ fn handle_post_trap(tf: &mut TrapFrame, from_user: bool) {
 
                 *frame = SignalFrame {
                     tf: *tf,
-                    blocked: sigman.blocked,
+                    blocked: self.blocked,
                     siginfo: sig,
                 };
 
@@ -209,8 +228,34 @@ fn handle_post_trap(tf: &mut TrapFrame, from_user: bool) {
                 if !action.flags.contains(SignalActionFlags::NODEFER) {
                     mask.add(signo);
                 }
-                sigman.blocked.add_from(&mask);
+                self.blocked.add_from(&mask);
+                true
             }
+        }
+    }
+}
+
+pub struct SignalFrame {
+    tf: TrapFrame,
+    blocked: SignalSet,
+    siginfo: SignalInfo,
+}
+
+#[register_trap_handler(POST_TRAP)]
+fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
+    if !from_user {
+        return;
+    }
+
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+    if sigman.prevent_signal_handling {
+        sigman.prevent_signal_handling = false;
+        return;
+    }
+    while let Some(sig) = sigman.dequeue_signal() {
+        if sigman.run_action(tf, sig) {
+            break;
         }
     }
 }
