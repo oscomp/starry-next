@@ -3,12 +3,8 @@ use core::ffi::{c_char, c_void};
 use alloc::string::ToString;
 use arceos_posix_api::AT_FDCWD;
 use axerrno::{AxError, LinuxError, LinuxResult};
-use macro_rules_attribute::apply;
-
-use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::syscall_instrument,
-};
+use axptr::{UserConstPtr, UserPtr};
+use axtask::{TaskExtRef, current};
 
 /// The ioctl() system call manipulates the underlying device parameters
 /// of special files.
@@ -18,14 +14,13 @@ use crate::{
 /// * `op` - The request code. It is of type unsigned long in glibc and BSD,
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
-#[apply(syscall_instrument)]
 pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
     warn!("Unimplemented syscall: SYS_IOCTL");
     Ok(0)
 }
 
 pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
-    let path = path.get_as_str()?;
+    let path = path.get_as_str(current().task_ext())?;
     axfs::api::set_current_dir(path).map(|_| 0).map_err(|err| {
         warn!("Failed to change directory: {err:?}");
         err.into()
@@ -33,7 +28,7 @@ pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
 }
 
 pub(crate) fn sys_mkdirat(dirfd: i32, path: UserConstPtr<c_char>, mode: u32) -> LinuxResult<isize> {
-    let path = path.get_as_str()?;
+    let path = path.get_as_str(current().task_ext())?;
 
     if !path.starts_with("/") && dirfd != AT_FDCWD as i32 {
         warn!("unsupported.");
@@ -142,8 +137,9 @@ impl<'a> DirBuffer<'a> {
     }
 }
 
-pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<isize> {
-    let buf = buf.get_as_bytes(len)?;
+pub fn sys_getdents64(fd: i32, mut buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
+    let buf_address = buf.address().as_usize();
+    let buf = buf.get_as_slice(current().task_ext(), len)?;
 
     if len < DirEnt::FIXED_SIZE {
         warn!("Buffer size too small: {len}");
@@ -158,14 +154,15 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<
         }
     };
 
-    let mut buffer =
-        unsafe { DirBuffer::new(core::slice::from_raw_parts_mut(buf as *mut u8, len)) };
+    let mut buffer = DirBuffer::new(buf);
 
-    let (initial_offset, count) = unsafe {
+    let (initial_offset, count) = {
         let mut buf_offset = 0;
         let mut count = 0;
         while buf_offset + DirEnt::FIXED_SIZE <= len {
-            let dir_ent = *(buf.add(buf_offset) as *const DirEnt);
+            let dir_ent: UserConstPtr<DirEnt> = (buf_address + buf_offset).into();
+            let dir_ent = dir_ent.get(current().task_ext())?;
+
             if dir_ent.d_reclen == 0 {
                 break;
             }
@@ -226,8 +223,8 @@ pub fn sys_linkat(
     new_path: UserConstPtr<c_char>,
     flags: i32,
 ) -> LinuxResult<isize> {
-    let old_path = old_path.get_as_null_terminated()?;
-    let new_path = new_path.get_as_null_terminated()?;
+    let old_path = old_path.get_as_null_terminated(current().task_ext())?;
+    let new_path = new_path.get_as_null_terminated(current().task_ext())?;
 
     if flags != 0 {
         warn!("Unsupported flags: {flags}");
@@ -262,7 +259,7 @@ pub fn sys_linkat(
 /// flags: can be 0 or AT_REMOVEDIR
 /// return 0 when success, else return -1
 pub fn sys_unlinkat(dir_fd: isize, path: UserConstPtr<c_char>, flags: usize) -> LinuxResult<isize> {
-    let path = path.get_as_null_terminated()?;
+    let path = path.get_as_null_terminated(current().task_ext())?;
 
     const AT_REMOVEDIR: usize = 0x200;
 
@@ -293,6 +290,7 @@ pub fn sys_unlinkat(dir_fd: isize, path: UserConstPtr<c_char>, flags: usize) -> 
         .map_err(|err| err.into())
 }
 
-pub fn sys_getcwd(buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
-    Ok(arceos_posix_api::sys_getcwd(buf.get_as_null_terminated()?.as_ptr() as _, size) as _)
+pub fn sys_getcwd(mut buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
+    let buf = buf.get_as_slice(current().task_ext(), size + 1)?;
+    Ok(arceos_posix_api::sys_getcwd(buf.as_mut_ptr() as _, size) as _)
 }

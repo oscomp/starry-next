@@ -18,14 +18,12 @@ xmas-elf = "0.9"
 spin = "0.9"
 crate_interface = "0.1"
 bitflags = "2.6"
-percpu = "0.2.0"
 
 kernel-elf-parser = "0.3"
 num_enum = { version = "0.7", default-features = false }
 syscalls = { version = "0.6", default-features = false }
 numeric-enum-macro = "0.2.0"
 static_assertions = "1.1.0"
-macro_rules_attribute = "0.2.0"
 
 axconfig = { git = "https://github.com/oscomp/arceos.git" }
 axfs = { git = "https://github.com/oscomp/arceos.git" }
@@ -37,6 +35,7 @@ axsync = { git = "https://github.com/oscomp/arceos.git" }
 axruntime = { git = "https://github.com/oscomp/arceos.git", features = ["multitask"] }
 arceos_posix_api = { git = "https://github.com/oscomp/arceos.git", features = ["uspace", "smp", "irq", "fs", "multitask", "net", "pipe", "select", "epoll"] }
 axns = { git = "https://github.com/oscomp/arceos.git", features = ["thread-local"] }
+axptr = { git = "https://github.com/Starry-OS/axptr.git" }
 
 [patch.crates-io]
 syscalls = { git = "https://github.com/jasonwhite/syscalls.git", rev = "92624de"}

@@ -6,6 +6,7 @@ use alloc::{
 use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
+use axptr::AddrSpaceProvider;
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
@@ -210,6 +211,12 @@ impl TaskExt {
     }
 }
 
+impl AddrSpaceProvider for &TaskExt {
+    fn with_addr_space<R>(&mut self, f: impl FnOnce(&mut AddrSpace) -> R) -> R {
+        f(&mut self.aspace.lock())
+    }
+}
+
 struct AxNamespaceImpl;
 #[crate_interface::impl_interface]
 impl AxNamespaceIf for AxNamespaceImpl {
@@ -294,7 +301,7 @@ pub fn read_trapframe_from_kstack(kstack_top: usize) -> TrapFrame {
     unsafe { *trap_frame_ptr }
 }
 
-pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
+pub fn wait_pid(pid: i32, exit_code_ptr: Option<&mut i32>) -> Result<u64, WaitStatus> {
     let curr_task = current();
     let mut exit_task_id: usize = 0;
     let mut answer_id: u64 = 0;
@@ -316,10 +323,8 @@ pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_ptr) = exit_code_ptr {
+                    *exit_code_ptr = exit_code << 8;
                 }
                 answer_id = child.id().as_u64();
                 break;
@@ -333,10 +338,8 @@ pub fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_ptr) = exit_code_ptr {
+                    *exit_code_ptr = exit_code << 8;
                 }
                 answer_id = child.id().as_u64();
             } else {
@@ -414,4 +417,8 @@ pub fn time_stat_output() -> (usize, usize, usize, usize) {
         stime_ns / NANOS_PER_SEC as usize,
         stime_ns / NANOS_PER_MICROS as usize,
     )
+}
+
+pub fn exit(exit_code: i32) -> ! {
+    axtask::exit(exit_code)
 }

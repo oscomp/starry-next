@@ -1,12 +1,8 @@
 use core::ffi::c_char;
 
 use axerrno::{LinuxError, LinuxResult};
-use macro_rules_attribute::apply;
-
-use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::syscall_instrument,
-};
+use axptr::{UserConstPtr, UserPtr};
+use axtask::{TaskExtRef, current};
 
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
@@ -74,8 +70,8 @@ impl From<arceos_posix_api::ctypes::stat> for Kstat {
     }
 }
 
-pub fn sys_fstat(fd: i32, kstatbuf: UserPtr<Kstat>) -> LinuxResult<isize> {
-    let kstatbuf = kstatbuf.get()?;
+pub fn sys_fstat(fd: i32, mut kstatbuf: UserPtr<Kstat>) -> LinuxResult<isize> {
+    let kstatbuf = kstatbuf.get(current().task_ext())?;
     let mut statbuf = arceos_posix_api::ctypes::stat::default();
 
     let result = unsafe {
@@ -85,24 +81,21 @@ pub fn sys_fstat(fd: i32, kstatbuf: UserPtr<Kstat>) -> LinuxResult<isize> {
         return Ok(result as _);
     }
 
-    unsafe {
-        let kstat = Kstat::from(statbuf);
-        kstatbuf.write(kstat);
-    }
+    *kstatbuf = statbuf.into();
+
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_fstatat(
     dir_fd: isize,
     path: UserConstPtr<c_char>,
-    kstatbuf: UserPtr<Kstat>,
+    mut kstatbuf: UserPtr<Kstat>,
     _flags: i32,
 ) -> LinuxResult<isize> {
-    let path = path.get_as_null_terminated()?;
+    let path = path.get_as_str(current().task_ext())?;
     let path = arceos_posix_api::handle_file_path(dir_fd, Some(path.as_ptr() as _), false)?;
 
-    let kstatbuf = kstatbuf.get()?;
+    let kstatbuf = kstatbuf.get(current().task_ext())?;
 
     let mut statbuf = arceos_posix_api::ctypes::stat::default();
     let result = unsafe {
@@ -115,10 +108,7 @@ pub fn sys_fstatat(
         return Ok(result as _);
     }
 
-    unsafe {
-        let kstat = Kstat::from(statbuf);
-        kstatbuf.write(kstat);
-    }
+    *kstatbuf = statbuf.into();
 
     Ok(0)
 }
@@ -182,13 +172,12 @@ pub struct StatX {
     pub stx_dio_offset_align: u32,
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_statx(
     dirfd: i32,
     pathname: UserConstPtr<c_char>,
     flags: u32,
     _mask: u32,
-    statxbuf: UserPtr<StatX>,
+    mut statxbuf: UserPtr<StatX>,
 ) -> LinuxResult<isize> {
     // `statx()` uses pathname, dirfd, and flags to identify the target
     // file in one of the following ways:
@@ -217,7 +206,7 @@ pub fn sys_statx(
     //        below), then the target file is the one referred to by the
     //        file descriptor dirfd.
 
-    let path = pathname.get_as_str()?;
+    let path = pathname.get_as_str(current().task_ext())?;
 
     const AT_EMPTY_PATH: u32 = 0x1000;
     if path.is_empty() {
@@ -230,7 +219,7 @@ pub fn sys_statx(
         if res < 0 {
             return Err(LinuxError::try_from(-res).unwrap());
         }
-        let statx = unsafe { &mut *statxbuf.get()? };
+        let statx = statxbuf.get(current().task_ext())?;
         statx.stx_blksize = status.st_blksize as u32;
         statx.stx_attributes = status.st_mode as u64;
         statx.stx_nlink = status.st_nlink;

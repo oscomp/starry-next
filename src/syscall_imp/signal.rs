@@ -3,15 +3,13 @@ use core::time::Duration;
 use arceos_posix_api as api;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::arch::TrapFrame;
+use axptr::{UserConstPtr, UserPtr};
 use axtask::{TaskExtRef, current};
 
-use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    signal::{
-        SIGKILL, SIGSTOP,
-        ctypes::{SignalAction, SignalInfo, SignalSet, k_sigaction},
-        sigreturn,
-    },
+use crate::signal::{
+    SIGKILL, SIGSTOP,
+    ctypes::{SignalInfo, SignalSet, k_sigaction},
+    sigreturn,
 };
 
 fn check_sigset_size(size: usize) -> LinuxResult<()> {
@@ -32,23 +30,19 @@ pub fn sys_rt_sigprocmask(
     let curr = current();
     let mut sigman = curr.task_ext().signal.lock();
 
-    if let Some(oldset) = oldset.nullable(UserPtr::get)? {
-        // SAFETY: oldset is a valid pointer
-        unsafe {
-            oldset.write(sigman.blocked);
-        }
+    if let Some(mut oldset) = oldset.nullable() {
+        *oldset.get(curr.task_ext())? = sigman.blocked;
     }
 
-    if let Some(set) = set.nullable(UserConstPtr::get)? {
-        // SAFETY: set is a valid pointer
-        let set: SignalSet = unsafe { set.read() };
+    if let Some(set) = set.nullable() {
+        let set = set.get(curr.task_ext())?;
         match how {
             // SIG_BLOCK
             0 => sigman.blocked.add_from(&set),
             // SIG_UNBLOCK
             1 => sigman.blocked.remove_from(&set),
             // SIG_SETMASK
-            2 => sigman.blocked = set,
+            2 => sigman.blocked = *set,
             _ => return Err(LinuxError::EINVAL),
         }
     }
@@ -75,29 +69,26 @@ pub fn sys_rt_sigaction(
     let curr = current();
     let mut sigman = curr.task_ext().signal.lock();
 
-    if let Some(oldact) = oldact.nullable(UserPtr::get)? {
-        // SAFETY: oldact is a valid pointer
-        sigman.action(signum).to_ctype(unsafe { &mut *oldact });
+    if let Some(mut oldact) = oldact.nullable() {
+        let oldact = oldact.get(curr.task_ext())?;
+        sigman.action(signum).to_ctype(oldact);
     }
 
-    if let Some(act) = act.nullable(UserConstPtr::get)? {
-        // SAFETY: act is a valid pointer
-        let action: SignalAction = unsafe { act.read() }.try_into()?;
-        sigman.set_action(signum, action);
+    if let Some(act) = act.nullable() {
+        let act = act.get(curr.task_ext())?;
+        sigman.set_action(signum, (*act).try_into()?);
     }
 
     Ok(0)
 }
 
-pub fn sys_rt_sigpending(set: UserPtr<SignalSet>, sigsetsize: usize) -> LinuxResult<isize> {
+pub fn sys_rt_sigpending(mut set: UserPtr<SignalSet>, sigsetsize: usize) -> LinuxResult<isize> {
     check_sigset_size(sigsetsize)?;
 
     let curr = current();
     let sigman = curr.task_ext().signal.lock();
 
-    let set = set.get()?;
-    // SAFETY: set is a valid pointer
-    unsafe { set.write(sigman.pending) };
+    *set.get(curr.task_ext())? = sigman.pending;
 
     Ok(0)
 }
@@ -115,26 +106,25 @@ pub fn sys_rt_sigtimedwait(
 ) -> LinuxResult<isize> {
     check_sigset_size(sigsetsize)?;
 
-    let set = set.get()?;
-    // SAFETY: set is a valid pointer
-    let mut set = SignalSet::from(unsafe { set.read() });
-
-    let timeout = timeout.nullable(UserConstPtr::get)?.map(|spec| {
-        // SAFETY: spec is a valid pointer
-        let spec = unsafe { spec.read() };
-        Duration::new(spec.tv_sec as u64, spec.tv_nsec as u32)
-    });
-
     let curr = current();
+    let mut set = *set.get(curr.task_ext())?;
+
+    let timeout = timeout
+        .nullable()
+        .map(|spec| {
+            spec.get(curr.task_ext())
+                .map(|spec| Duration::new(spec.tv_sec as u64, spec.tv_nsec as u32))
+        })
+        .transpose()?;
+
     let mut sigman = curr.task_ext().signal.lock();
 
     // Non-blocked signals cannot be waited
     set.remove_from(&!sigman.blocked);
 
     if let Some(siginfo) = sigman.dequeue_signal_in(&set) {
-        if let Some(info) = info.nullable(UserPtr::get)? {
-            // SAFETY: info is a valid pointer
-            unsafe { info.write(siginfo) };
+        if let Some(mut info) = info.nullable() {
+            *info.get(curr.task_ext())? = siginfo;
         }
         return Ok(0);
     }
@@ -151,9 +141,8 @@ pub fn sys_rt_sigtimedwait(
 
     let mut sigman = curr.task_ext().signal.lock();
     if let Some(siginfo) = sigman.dequeue_signal_in(&set) {
-        if let Some(info) = info.nullable(UserPtr::get)? {
-            // SAFETY: info is a valid pointer
-            unsafe { info.write(siginfo) };
+        if let Some(mut info) = info.nullable() {
+            *info.get(curr.task_ext())? = siginfo;
         }
         return Ok(0);
     }
@@ -165,15 +154,13 @@ pub fn sys_rt_sigtimedwait(
 
 pub fn sys_rt_sigsuspend(
     tf: &mut TrapFrame,
-    set: UserPtr<SignalSet>,
+    mut set: UserPtr<SignalSet>,
     sigsetsize: usize,
 ) -> LinuxResult<isize> {
     check_sigset_size(sigsetsize)?;
 
     let curr = current();
-    let set = set.get()?;
-    // SAFETY: set is a valid pointer
-    let mut set = unsafe { *set };
+    let set = set.get(curr.task_ext())?;
 
     set.remove(SIGKILL);
     set.remove(SIGSTOP);
@@ -181,8 +168,8 @@ pub fn sys_rt_sigsuspend(
     let mut sigman = curr.task_ext().signal.lock();
     let old_blocked = sigman.blocked;
 
-    sigman.blocked = set;
-    sigman.waiting = !set;
+    sigman.blocked = *set;
+    sigman.waiting = !*set;
     drop(sigman);
 
     // TODO: document this

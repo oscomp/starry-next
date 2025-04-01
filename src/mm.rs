@@ -153,27 +153,13 @@ pub fn load_user_app(
     Ok((entry, user_sp))
 }
 
-#[percpu::def_percpu]
-static mut ACCESSING_USER_MEM: bool = false;
-
-/// Enables scoped access into user memory, allowing page faults to occur inside
-/// kernel.
-pub fn access_user_memory<R>(f: impl FnOnce() -> R) -> R {
-    ACCESSING_USER_MEM.with_current(|v| {
-        *v = true;
-        let result = f();
-        *v = false;
-        result
-    })
-}
-
 #[register_trap_handler(PAGE_FAULT)]
 fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool) -> bool {
     warn!(
         "Page fault at {:#x}, access_flags: {:#x?}",
         vaddr, access_flags
     );
-    if !is_user && !ACCESSING_USER_MEM.read_current() {
+    if !is_user && !axptr::is_accessing_user_memory() {
         return false;
     }
 
@@ -188,7 +174,7 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
             axtask::current().id_name(),
             vaddr
         );
-        axtask::exit(-1);
+        crate::task::exit(-1);
     }
     true
 }

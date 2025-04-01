@@ -1,15 +1,13 @@
-use core::{ffi::c_char, ptr};
+use core::{ffi::c_char, ops::DerefMut};
 
 use alloc::vec::Vec;
 use axerrno::{LinuxError, LinuxResult};
+use axptr::{UserConstPtr, UserPtr};
 use axtask::{TaskExtRef, current, yield_now};
-use macro_rules_attribute::apply;
 use num_enum::TryFromPrimitive;
 
 use crate::{
     ctypes::{WaitFlags, WaitStatus},
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_imp::syscall_instrument,
     task::wait_pid,
 };
 
@@ -34,12 +32,10 @@ enum ArchPrctlCode {
     SetCpuid = 0x1012,
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_getpid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().proc_id as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_getppid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().get_parent() as _)
 }
@@ -55,22 +51,21 @@ pub fn sys_exit(status: i32) -> ! {
         }
         // TODO: wake up threads, which are blocked by futex, and waiting for the address pointed by clear_child_tid
     }
-    axtask::exit(status);
+    crate::task::exit(status);
 }
 
 pub fn sys_exit_group(status: i32) -> ! {
     warn!("Temporarily replace sys_exit_group with sys_exit");
-    axtask::exit(status);
+    crate::task::exit(status);
 }
 
 /// To set the clear_child_tid field in the task extended data.
 ///
 /// The set_tid_address() always succeeds
-#[apply(syscall_instrument)]
 pub fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> LinuxResult<isize> {
     let curr = current();
     curr.task_ext()
-        .set_clear_child_tid(tid_ptd.address().as_ptr() as _);
+        .set_clear_child_tid(tid_ptd.address().as_usize() as _);
     Ok(curr.id().as_u64() as isize)
 }
 
@@ -111,7 +106,6 @@ pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>) -> LinuxResult<isize> {
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_clone(
     flags: usize,
     user_stack: usize,
@@ -144,12 +138,17 @@ pub fn sys_clone(
     }
 }
 
-#[apply(syscall_instrument)]
-pub fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> LinuxResult<isize> {
+pub fn sys_wait4(pid: i32, exit_code: UserPtr<i32>, option: u32) -> LinuxResult<isize> {
     let option_flag = WaitFlags::from_bits(option).unwrap();
-    let exit_code_ptr = exit_code_ptr.nullable(UserPtr::get)?;
+    let mut exit_code = exit_code.nullable();
     loop {
-        let answer = wait_pid(pid, exit_code_ptr.unwrap_or_else(ptr::null_mut));
+        let answer = wait_pid(
+            pid,
+            exit_code
+                .as_mut()
+                .map(|p| p.get(current().task_ext()))
+                .transpose()?,
+        );
         match answer {
             Ok(pid) => {
                 return Ok(pid as isize);
@@ -173,29 +172,30 @@ pub fn sys_wait4(pid: i32, exit_code_ptr: UserPtr<i32>, option: u32) -> LinuxRes
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_execve(
     path: UserConstPtr<c_char>,
     argv: UserConstPtr<usize>,
     envp: UserConstPtr<usize>,
 ) -> LinuxResult<isize> {
-    let path_str = path.get_as_str()?;
+    let curr = current();
+    let mut aspace = curr.task_ext().aspace.lock();
+    let path_str = path.get_as_str(aspace.deref_mut())?;
 
     let args = argv
-        .get_as_null_terminated()?
+        .get_as_null_terminated(aspace.deref_mut())?
         .iter()
         .map(|arg| {
             UserConstPtr::<c_char>::from(*arg)
-                .get_as_str()
+                .get_as_str(aspace.deref_mut())
                 .map(Into::into)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let envs = envp
-        .get_as_null_terminated()?
+        .get_as_null_terminated(aspace.deref_mut())?
         .iter()
         .map(|env| {
             UserConstPtr::<c_char>::from(*env)
-                .get_as_str()
+                .get_as_str(aspace.deref_mut())
                 .map(Into::into)
         })
         .collect::<Result<Vec<_>, _>>()?;

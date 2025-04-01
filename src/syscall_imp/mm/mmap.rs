@@ -1,14 +1,9 @@
 use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
+use axptr::UserPtr;
 use axtask::{TaskExtRef, current};
-use macro_rules_attribute::apply;
 use memory_addr::{VirtAddr, VirtAddrRange};
-
-use crate::{
-    ptr::{PtrWrapper, UserPtr},
-    syscall_imp::syscall_instrument,
-};
 
 bitflags::bitflags! {
     /// permissions for sys_mmap
@@ -66,7 +61,6 @@ bitflags::bitflags! {
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_mmap(
     addr: UserPtr<usize>,
     length: usize,
@@ -75,8 +69,7 @@ pub fn sys_mmap(
     fd: i32,
     offset: isize,
 ) -> LinuxResult<isize> {
-    // Safety: addr is used for mapping, and we won't directly access it.
-    let mut addr = unsafe { addr.into_inner() };
+    let mut addr = addr.address().as_usize();
 
     let curr = current();
     let curr_ext = curr.task_ext();
@@ -87,12 +80,12 @@ pub fn sys_mmap(
     let map_flags = MmapFlags::from_bits_truncate(flags);
     let mut aligned_length = length;
 
-    if addr.is_null() {
+    if addr == 0 {
         aligned_length = memory_addr::align_up_4k(aligned_length);
     } else {
-        let start = addr as usize;
+        let start = addr;
         let mut end = start + aligned_length;
-        addr = memory_addr::align_down_4k(start) as *mut usize;
+        addr = memory_addr::align_down_4k(start).into();
         end = memory_addr::align_up_4k(end);
         aligned_length = end - start;
     }
@@ -103,10 +96,10 @@ pub fn sys_mmap(
     );
 
     let start_addr = if map_flags.contains(MmapFlags::MAP_FIXED) {
-        if addr.is_null() {
+        if addr == 0 {
             return Err(LinuxError::EINVAL);
         }
-        let dst_addr = VirtAddr::from(addr as usize);
+        let dst_addr = VirtAddr::from(addr);
         aspace.unmap(dst_addr, aligned_length)?;
         dst_addr
     } else {
@@ -157,26 +150,17 @@ pub fn sys_mmap(
     Ok(start_addr.as_usize() as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_munmap(addr: UserPtr<usize>, length: usize) -> LinuxResult<isize> {
-    // Safety: addr is used for mapping, and we won't directly access it.
-    let addr = unsafe { addr.into_inner() };
-
     let curr = current();
     let curr_ext = curr.task_ext();
     let mut aspace = curr_ext.aspace.lock();
     let length = memory_addr::align_up_4k(length);
-    let start_addr = VirtAddr::from(addr as usize);
-    aspace.unmap(start_addr, length)?;
+    aspace.unmap(addr.address(), length)?;
     axhal::arch::flush_tlb(None);
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_mprotect(addr: UserPtr<usize>, length: usize, prot: i32) -> LinuxResult<isize> {
-    // Safety: addr is used for mapping, and we won't directly access it.
-    let addr = unsafe { addr.into_inner() };
-
     // TODO: implement PROT_GROWSUP & PROT_GROWSDOWN
     let Some(permission_flags) = MmapProt::from_bits(prot) else {
         return Err(LinuxError::EINVAL);
@@ -189,8 +173,7 @@ pub fn sys_mprotect(addr: UserPtr<usize>, length: usize, prot: i32) -> LinuxResu
     let curr_ext = curr.task_ext();
     let mut aspace = curr_ext.aspace.lock();
     let length = memory_addr::align_up_4k(length);
-    let start_addr = VirtAddr::from(addr as usize);
-    aspace.protect(start_addr, length, permission_flags.into())?;
+    aspace.protect(addr.address(), length, permission_flags.into())?;
 
     Ok(0)
 }

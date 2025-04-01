@@ -9,7 +9,6 @@ extern crate alloc;
 mod ctypes;
 
 mod mm;
-mod ptr;
 mod signal;
 mod syscall_imp;
 mod task;

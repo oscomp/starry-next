@@ -4,11 +4,10 @@ use core::alloc::Layout;
 
 use alloc::sync::Arc;
 use axhal::{arch::TrapFrame, trap::POST_TRAP};
-use axtask::{TaskExtRef, WaitQueue, current, exit};
+use axptr::{UserConstPtr, UserPtr};
+use axtask::{TaskExtRef, WaitQueue, current};
 use ctypes::{SignalAction, SignalActionFlags, SignalDisposition, SignalInfo, SignalSet};
 use linkme::distributed_slice as register_trap_handler;
-
-use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 
 pub const SIGKILL: u32 = 9;
 pub const SIGSTOP: u32 = 19;
@@ -181,14 +180,14 @@ impl SignalManager {
         let action = &self.actions[signo as usize];
         match action.disposition {
             SignalDisposition::Default => match DEFAULT_ACTIONS[signo as usize] {
-                DefaultSignalAction::Terminate => exit(128 + signo as i32),
+                DefaultSignalAction::Terminate => crate::task::exit(128 + signo as i32),
                 DefaultSignalAction::CoreDump => {
                     warn!("Core dump not implemented");
-                    exit(128 + signo as i32);
+                    crate::task::exit(128 + signo as i32);
                 }
                 DefaultSignalAction::Stop => {
                     warn!("Stop not implemented");
-                    exit(-1);
+                    crate::task::exit(-1);
                 }
                 DefaultSignalAction::Ignore => false,
                 DefaultSignalAction::Continue => {
@@ -201,10 +200,10 @@ impl SignalManager {
                 let layout = Layout::new::<SignalFrame>();
                 let aligned_sp = (tf.sp() - layout.size()) & !(layout.align() - 1);
 
-                let frame_ptr: UserPtr<SignalFrame> = aligned_sp.into();
-                let frame_ptr = frame_ptr.get().expect("invalid frame ptr");
-                // SAFETY: pointer is valid
-                let frame = unsafe { &mut *frame_ptr };
+                let mut frame_ptr: UserPtr<SignalFrame> = aligned_sp.into();
+                let frame = frame_ptr
+                    .get(current().task_ext())
+                    .expect("invalid frame ptr");
 
                 *frame = SignalFrame {
                     tf: *tf,
@@ -216,7 +215,7 @@ impl SignalManager {
                 tf.set_sp(aligned_sp);
                 tf.set_arg0(signo as _);
                 tf.set_arg1(&frame.siginfo as *const _ as _);
-                tf.set_arg2(frame_ptr as _);
+                tf.set_arg2(&frame as *const _ as _);
 
                 let restorer = action.restorer.map_or(0, |f| f as _);
                 #[cfg(target_arch = "x86_64")]
@@ -262,9 +261,9 @@ fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
 
 pub fn sigreturn(tf: &mut TrapFrame) {
     let frame_ptr: UserConstPtr<SignalFrame> = tf.sp().into();
-    let frame = frame_ptr.get().expect("invalid frame ptr");
-    // SAFETY: pointer is valid
-    let frame = unsafe { &*frame };
+    let frame = frame_ptr
+        .get(current().task_ext())
+        .expect("invalid frame ptr");
 
     *tf = frame.tf;
     #[cfg(any(
