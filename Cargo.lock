@@ -433,7 +433,7 @@ dependencies = [
 [[package]]
 name = "axptr"
 version = "0.1.0"
-source = "git+https://github.com/Starry-OS/axptr.git#df2459f658316618b787af09b205a5f509352dc7"
+source = "git+https://github.com/Starry-OS/axptr.git#d5f3a2939097f9059362634f78e616c18133605d"
 dependencies = [
  "axerrno",
  "axhal",
