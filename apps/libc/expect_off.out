@@ -22,3 +22,4 @@ test_sigwait ok3
 test_sigsuspend ok1
 test_sigsuspend ok2
 test_sigsuspend ok3
+test_pause ok
