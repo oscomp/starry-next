@@ -7,6 +7,7 @@ use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
 use axptr::AddrSpaceProvider;
+use axsignal::SignalManager;
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
@@ -18,7 +19,6 @@ use spin::Once;
 use crate::{
     copy_from_kernel,
     ctypes::{CloneFlags, TimeStat, WaitStatus},
-    signal::SignalManager,
 };
 use axhal::{
     arch::{TrapFrame, UspaceContext},

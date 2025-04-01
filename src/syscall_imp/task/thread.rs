@@ -199,6 +199,7 @@ pub fn sys_execve(
                 .map(Into::into)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    drop(aspace);
 
     info!(
         "execve: path: {:?}, args: {:?}, envs: {:?}",

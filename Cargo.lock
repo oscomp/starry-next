@@ -464,6 +464,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "axsignal"
+version = "0.1.0"
+dependencies = [
+ "arceos_posix_api",
+ "axconfig",
+ "axerrno",
+ "axhal",
+ "axptr",
+ "axtask",
+ "bitflags 2.9.0",
+ "log",
+]
+
+[[package]]
 name = "axstd"
 version = "0.1.0"
 dependencies = [
@@ -1424,6 +1438,7 @@ dependencies = [
  "axns",
  "axptr",
  "axruntime",
+ "axsignal",
  "axstd",
  "axsync",
  "axtask",

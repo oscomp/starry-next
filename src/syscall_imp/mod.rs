@@ -141,6 +141,9 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
             tf.arg3() as _,
         ),
         Sysno::rt_sigsuspend => sys_rt_sigsuspend(tf, tf.arg0().into(), tf.arg1() as _),
+        Sysno::gettid => Ok(1),
+        
+Sysno::prlimit64 => Ok(0),
         _ => {
             warn!("Unimplemented syscall: {}", syscall_num);
             crate::task::exit(LinuxError::ENOSYS as _)

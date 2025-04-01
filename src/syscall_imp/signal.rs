@@ -2,15 +2,35 @@ use core::time::Duration;
 
 use arceos_posix_api as api;
 use axerrno::{LinuxError, LinuxResult};
-use axhal::arch::TrapFrame;
+use axhal::{
+    arch::TrapFrame,
+    trap::{POST_TRAP, register_trap_handler},
+};
 use axptr::{UserConstPtr, UserPtr};
-use axtask::{TaskExtRef, current};
-
-use crate::signal::{
+use axsignal::{
     SIGKILL, SIGSTOP,
     ctypes::{SignalInfo, SignalSet, k_sigaction},
-    sigreturn,
 };
+use axtask::{TaskExtRef, current};
+
+#[register_trap_handler(POST_TRAP)]
+fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
+    if !from_user {
+        return;
+    }
+
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+    if sigman.prevent_signal_handling {
+        sigman.prevent_signal_handling = false;
+        return;
+    }
+    while let Some(sig) = sigman.dequeue_signal() {
+        if sigman.run_action(tf, sig) {
+            break;
+        }
+    }
+}
 
 fn check_sigset_size(size: usize) -> LinuxResult<()> {
     if size != size_of::<SignalSet>() {
@@ -62,7 +82,7 @@ pub fn sys_rt_sigaction(
     if !(1..32).contains(&signum) {
         return Err(LinuxError::EINVAL);
     }
-    if signum == crate::signal::SIGKILL || signum == crate::signal::SIGSTOP {
+    if signum == SIGKILL || signum == SIGSTOP {
         return Err(LinuxError::EINVAL);
     }
 
@@ -94,7 +114,9 @@ pub fn sys_rt_sigpending(mut set: UserPtr<SignalSet>, sigsetsize: usize) -> Linu
 }
 
 pub fn sys_rt_sigreturn(tf: &mut TrapFrame) -> LinuxResult<isize> {
-    sigreturn(tf);
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+    sigman.restore(tf, curr.task_ext());
     Ok(tf.retval() as _)
 }
 
