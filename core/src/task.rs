@@ -117,7 +117,8 @@ impl TaskExt {
             new_uctx.set_sp(stack);
         }
         // Skip current instruction
-        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
+        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
+        {
             let new_uctx_ip = new_uctx.ip();
             new_uctx.set_ip(new_uctx_ip + 4);
         }
