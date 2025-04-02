@@ -93,8 +93,8 @@ impl TaskExt {
                 let kstack_top = curr.kernel_stack_top().unwrap();
                 info!(
                     "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                    curr.task_ext().uctx.get_ip(),
-                    curr.task_ext().uctx.get_sp(),
+                    curr.task_ext().uctx.ip(),
+                    curr.task_ext().uctx.sp(),
                     kstack_top,
                 );
                 unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };
@@ -117,8 +117,11 @@ impl TaskExt {
             new_uctx.set_sp(stack);
         }
         // Skip current instruction
-        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-        new_uctx.set_ip(new_uctx.get_ip() + 4);
+        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
+            let new_uctx_ip = new_uctx.ip();
+            new_uctx.set_ip(new_uctx_ip + 4);
+        }
+
         new_uctx.set_retval(0);
         let return_id: u64 = new_task.id().as_u64();
         let new_task_ext = TaskExt::new(
@@ -248,8 +251,8 @@ pub fn spawn_user_task(
             let kstack_top = curr.kernel_stack_top().unwrap();
             info!(
                 "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                curr.task_ext().uctx.get_ip(),
-                curr.task_ext().uctx.get_sp(),
+                curr.task_ext().uctx.ip(),
+                curr.task_ext().uctx.sp(),
                 kstack_top,
             );
             unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };
