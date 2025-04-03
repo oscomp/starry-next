@@ -1,6 +1,8 @@
+use core::ffi::c_void;
+
 use axerrno::LinuxResult;
 
-use crate::ptr::{PtrWrapper, UserPtr};
+use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 
 pub fn sys_getuid() -> LinuxResult<isize> {
     Ok(0)
@@ -45,5 +47,30 @@ impl UtsName {
 
 pub fn sys_uname(name: UserPtr<UtsName>) -> LinuxResult<isize> {
     unsafe { *name.get()? = UtsName::default() };
+    Ok(0)
+}
+
+pub fn sys_prlimit64(
+    _pid: i32,
+    _resource: i32,
+    _new_limit: UserConstPtr<c_void>,
+    _old_limit: UserPtr<c_void>,
+) -> LinuxResult<isize> {
+    warn!("sys_prlimit64: not implemented");
+    Ok(0)
+}
+
+pub fn sys_rseq(
+    _rseq: UserPtr<c_void>,
+    _rseq_len: u32,
+    _flags: u32,
+    _sig: UserPtr<c_void>,
+) -> LinuxResult<isize> {
+    warn!("sys_rseq: not implemented");
+    Ok(0)
+}
+
+pub fn sys_getrandom(_buf: UserPtr<c_void>, _buflen: usize, _flags: u32) -> LinuxResult<isize> {
+    warn!("sys_getrandom: not implemented");
     Ok(0)
 }

@@ -1,4 +1,7 @@
-use core::{ffi::c_char, ptr};
+use core::{
+    ffi::{c_char, c_void},
+    ptr,
+};
 
 use alloc::vec::Vec;
 use axerrno::{LinuxError, LinuxResult};
@@ -209,4 +212,16 @@ pub fn sys_execve(
     }
 
     unreachable!("execve should never return");
+}
+
+#[apply(syscall_instrument)]
+pub fn sys_gettid() -> LinuxResult<isize> {
+    warn!("sys_gettid: not implemented");
+    Ok(axtask::current().task_ext().proc_id as _)
+}
+
+#[apply(syscall_instrument)]
+pub fn sys_set_robust_list(_head: UserPtr<c_void>, _len: usize) -> LinuxResult<isize> {
+    warn!("sys_set_robust_list: not implemented");
+    Ok(0)
 }

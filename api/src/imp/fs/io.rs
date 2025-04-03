@@ -5,6 +5,10 @@ use axerrno::LinuxResult;
 
 use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 
+pub fn sys_lseek(fd: i32, offset: isize, whence: i32) -> LinuxResult<isize> {
+    Ok(api::sys_lseek(fd, offset as _, whence) as _)
+}
+
 pub fn sys_read(fd: i32, buf: UserPtr<c_void>, count: usize) -> LinuxResult<isize> {
     let buf = buf.get_as_bytes(count)?;
     Ok(api::sys_read(fd, buf, count))
@@ -37,4 +41,23 @@ pub fn sys_openat(
 pub fn sys_open(path: UserConstPtr<c_char>, flags: i32, modes: mode_t) -> LinuxResult<isize> {
     use arceos_posix_api::AT_FDCWD;
     sys_openat(AT_FDCWD as _, path, flags, modes)
+}
+
+pub fn sys_readlink(
+    _pathname: UserConstPtr<c_char>,
+    _buf: UserPtr<c_char>,
+    _bufsiz: usize,
+) -> LinuxResult<isize> {
+    warn!("sys_readlink: not implemented");
+    Ok(0)
+}
+
+pub fn sys_readlinkat(
+    _dirfd: i32,
+    _pathname: UserConstPtr<c_char>,
+    _buf: UserPtr<c_char>,
+    _bufsiz: usize,
+) -> LinuxResult<isize> {
+    warn!("sys_readlinkat: not implemented");
+    Ok(0)
 }

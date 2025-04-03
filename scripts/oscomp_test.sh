@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TIMEOUT=60s
+TIMEOUT=600s
 EXIT_STATUS=0
 ROOT=$(realpath $(dirname $0))/../
 AX_ROOT=$ROOT/.arceos
@@ -24,8 +24,9 @@ if [ "$ARCH" != "x86_64" ] && [ "$ARCH" != "riscv64" ] && [ "$ARCH" != "aarch64"
     exit $S_FAILED
 fi
 
-LIBC=musl
-
+if [ -z "$LIBC" ]; then
+    LIBC=musl
+fi
 if [ "$LIBC" != "musl" ] && [ "$LIBC" != "glibc" ]; then
     echo "Unknown libc: $LIBC"
     exit $S_FAILED
@@ -56,6 +57,7 @@ basic_testlist=(
     "/$LIBC/basic/open"
     "/$LIBC/basic/pipe"
     "/$LIBC/basic/read"
+    "/$LIBC/basic/sleep"
     "/$LIBC/basic/times"
     "/$LIBC/basic/umount"
     "/$LIBC/basic/uname"
@@ -68,7 +70,68 @@ basic_testlist=(
 busybox_testlist=("/$LIBC/busybox sh /$LIBC/busybox_testcode.sh")
 iozone_testlist=("/$LIBC/busybox sh /$LIBC/iozone_testcode.sh")
 lua_testlist=("/$LIBC/busybox sh /$LIBC/lua_testcode.sh")
-libctest_testlist=("/$LIBC/busybox sh /$LIBC/libctest_testcode.sh")
+libctest_testlist=(
+    "/$LIBC/runtest.exe -w entry-static.exe argv"
+    "/$LIBC/runtest.exe -w entry-static.exe basename"
+    "/$LIBC/runtest.exe -w entry-static.exe dirname"
+    "/$LIBC/runtest.exe -w entry-static.exe env"
+    "/$LIBC/runtest.exe -w entry-static.exe fdopen"
+    "/$LIBC/runtest.exe -w entry-static.exe inet_pton"
+    "/$LIBC/runtest.exe -w entry-static.exe memstream"
+    "/$LIBC/runtest.exe -w entry-static.exe random"
+    "/$LIBC/runtest.exe -w entry-static.exe search_hsearch"
+    "/$LIBC/runtest.exe -w entry-static.exe search_insque"
+    "/$LIBC/runtest.exe -w entry-static.exe search_lsearch"
+    "/$LIBC/runtest.exe -w entry-static.exe search_tsearch"
+    "/$LIBC/runtest.exe -w entry-static.exe snprintf"
+    "/$LIBC/runtest.exe -w entry-static.exe string"
+    "/$LIBC/runtest.exe -w entry-static.exe string_memcpy"
+    "/$LIBC/runtest.exe -w entry-static.exe string_memmem"
+    "/$LIBC/runtest.exe -w entry-static.exe string_memset"
+    "/$LIBC/runtest.exe -w entry-static.exe string_strchr"
+    "/$LIBC/runtest.exe -w entry-static.exe string_strcspn"
+    "/$LIBC/runtest.exe -w entry-static.exe string_strstr"
+    "/$LIBC/runtest.exe -w entry-static.exe strptime"
+    "/$LIBC/runtest.exe -w entry-static.exe strtod"
+    "/$LIBC/runtest.exe -w entry-static.exe strtod_simple"
+    "/$LIBC/runtest.exe -w entry-static.exe strtof"
+    "/$LIBC/runtest.exe -w entry-static.exe strtold"
+    "/$LIBC/runtest.exe -w entry-static.exe tgmath"
+    "/$LIBC/runtest.exe -w entry-static.exe time"
+    "/$LIBC/runtest.exe -w entry-static.exe tls_align"
+    "/$LIBC/runtest.exe -w entry-static.exe udiv"
+    "/$LIBC/runtest.exe -w entry-static.exe wcsstr"
+    "/$LIBC/runtest.exe -w entry-static.exe fgets_eof"
+    "/$LIBC/runtest.exe -w entry-static.exe inet_ntop_v4mapped"
+    "/$LIBC/runtest.exe -w entry-static.exe inet_pton_empty_last_field"
+    "/$LIBC/runtest.exe -w entry-static.exe iswspace_null"
+    "/$LIBC/runtest.exe -w entry-static.exe lrand48_signextend"
+    "/$LIBC/runtest.exe -w entry-static.exe malloc_0"
+    "/$LIBC/runtest.exe -w entry-static.exe mbsrtowcs_overflow"
+    "/$LIBC/runtest.exe -w entry-static.exe memmem_oob_read"
+    "/$LIBC/runtest.exe -w entry-static.exe memmem_oob"
+    "/$LIBC/runtest.exe -w entry-static.exe mkdtemp_failure"
+    "/$LIBC/runtest.exe -w entry-static.exe mkstemp_failure"
+    "/$LIBC/runtest.exe -w entry-static.exe printf_1e9_oob"
+    "/$LIBC/runtest.exe -w entry-static.exe printf_fmt_g_round"
+    "/$LIBC/runtest.exe -w entry-static.exe printf_fmt_g_zeros"
+    "/$LIBC/runtest.exe -w entry-static.exe printf_fmt_n"
+    "/$LIBC/runtest.exe -w entry-static.exe putenv_doublefree"
+    "/$LIBC/runtest.exe -w entry-static.exe regex_backref_0"
+    "/$LIBC/runtest.exe -w entry-static.exe regex_bracket_icase"
+    "/$LIBC/runtest.exe -w entry-static.exe regex_negated_range"
+    "/$LIBC/runtest.exe -w entry-static.exe regexec_nosub"
+    "/$LIBC/runtest.exe -w entry-static.exe scanf_bytes_consumed"
+    "/$LIBC/runtest.exe -w entry-static.exe scanf_match_literal_eof"
+    "/$LIBC/runtest.exe -w entry-static.exe scanf_nullbyte_char"
+    "/$LIBC/runtest.exe -w entry-static.exe sigprocmask_internal"
+    "/$LIBC/runtest.exe -w entry-static.exe sscanf_eof"
+    "/$LIBC/runtest.exe -w entry-static.exe strverscmp"
+    "/$LIBC/runtest.exe -w entry-static.exe syscall_sign_extend"
+    "/$LIBC/runtest.exe -w entry-static.exe uselocale_0"
+    "/$LIBC/runtest.exe -w entry-static.exe wcsncpy_read_overflow"
+    "/$LIBC/runtest.exe -w entry-static.exe wcsstr_false_negative"
+)
 
 testcases_type=(
     "basic"

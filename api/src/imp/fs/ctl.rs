@@ -1,7 +1,7 @@
 use core::ffi::{c_char, c_void};
 
 use alloc::string::ToString;
-use arceos_posix_api::AT_FDCWD;
+use arceos_posix_api::{AT_FDCWD, FD_TABLE};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use macro_rules_attribute::apply;
 
@@ -9,6 +9,18 @@ use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
     syscall_instrument,
 };
+
+#[allow(missing_docs)]
+pub const TIOCGWINSZ: usize = 0x5413;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ConsoleWinSize {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
+}
 
 /// The ioctl() system call manipulates the underlying device parameters
 /// of special files.
@@ -19,9 +31,26 @@ use crate::{
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
 #[apply(syscall_instrument)]
-pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
-    warn!("Unimplemented syscall: SYS_IOCTL");
-    Ok(0)
+pub fn sys_ioctl(fd: i32, op: usize, argp: UserPtr<c_void>) -> LinuxResult<isize> {
+    if fd >= FD_TABLE.read().count() as i32 {
+        debug!("fd {} is out of range", fd);
+        return Err(LinuxError::EBADF);
+    }
+    if FD_TABLE.read().get(fd as usize).is_none() {
+        debug!("fd {} is none", fd);
+        return Err(LinuxError::EBADF);
+    }
+    let argp = argp.get_as_bytes(size_of::<ConsoleWinSize>())?;
+    match op {
+        TIOCGWINSZ => {
+            let winsize = argp as *mut ConsoleWinSize;
+            unsafe {
+                *winsize = ConsoleWinSize::default();
+            }
+            Ok(0)
+        }
+        _ => Err(LinuxError::EOPNOTSUPP),
+    }
 }
 
 pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
@@ -254,6 +283,11 @@ pub fn sys_linkat(
         })
         .map(|_| 0)
         .map_err(|err| err.into())
+}
+
+pub fn sys_unlink(_path: UserConstPtr<c_char>) -> LinuxResult<isize> {
+    warn!("sys_unlink: not implemented");
+    Ok(0)
 }
 
 /// remove link of specific file (can be used to delete file)
