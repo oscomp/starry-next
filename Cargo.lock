@@ -466,6 +466,7 @@ dependencies = [
 [[package]]
 name = "axsignal"
 version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axsignal.git#813862199c755fad26494e46da84bd9a22e74731"
 dependencies = [
  "arceos_posix_api",
  "axconfig",

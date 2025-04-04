@@ -36,8 +36,7 @@ axruntime = { git = "https://github.com/oscomp/arceos.git", features = ["multita
 arceos_posix_api = { git = "https://github.com/oscomp/arceos.git", features = ["uspace", "smp", "irq", "fs", "multitask", "net", "pipe", "select", "epoll"] }
 axns = { git = "https://github.com/oscomp/arceos.git", features = ["thread-local"] }
 axptr = { git = "https://github.com/Starry-OS/axptr.git" }
-
-axsignal = { path = "/home/mivik/Projects/axsignal" }
+axsignal = { git = "https://github.com/Starry-OS/axsignal.git" }
 
 [patch.crates-io]
 syscalls = { git = "https://github.com/jasonwhite/syscalls.git", rev = "92624de"}
