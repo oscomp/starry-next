@@ -1,6 +1,7 @@
 use axerrno::LinuxResult;
+use macro_rules_attribute::apply;
 
-use crate::ptr::{PtrWrapper, UserPtr};
+use crate::{ptr::UserPtr, syscall_instrument};
 
 pub fn sys_getuid() -> LinuxResult<isize> {
     Ok(0)
@@ -43,7 +44,8 @@ impl UtsName {
     }
 }
 
+#[apply(syscall_instrument)]
 pub fn sys_uname(name: UserPtr<UtsName>) -> LinuxResult<isize> {
-    unsafe { *name.get()? = UtsName::default() };
+    *name.get_as_mut()? = UtsName::default();
     Ok(0)
 }
