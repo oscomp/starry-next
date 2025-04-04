@@ -4,7 +4,7 @@ use axhal::time::{monotonic_time_nanos, nanos_to_ticks};
 use axptr::UserPtr;
 use axtask::{TaskExtRef, current};
 
-use crate::{ctypes::Tms, task::time_stat_output};
+use starry_core::{ctypes::Tms, task::time_stat_output};
 
 pub fn sys_clock_gettime(
     clock_id: i32,

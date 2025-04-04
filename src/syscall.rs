@@ -1,24 +1,11 @@
-mod fs;
-mod mm;
-mod signal;
-mod sys;
-mod task;
-mod utils;
-
-use crate::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use axerrno::{LinuxError, LinuxResult};
 use axhal::{
     arch::TrapFrame,
     trap::{SYSCALL, register_trap_handler},
 };
+use starry_api::*;
+use starry_core::task::{exit, time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use syscalls::Sysno;
-
-use self::fs::*;
-use self::mm::*;
-use self::signal::*;
-use self::sys::*;
-use self::task::*;
-use self::utils::*;
 
 #[register_trap_handler(SYSCALL)]
 fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
@@ -142,11 +129,11 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::rt_sigsuspend => sys_rt_sigsuspend(tf, tf.arg0().into(), tf.arg1() as _),
         Sysno::gettid => Ok(1),
-        
-Sysno::prlimit64 => Ok(0),
+
+        Sysno::prlimit64 => Ok(0),
         _ => {
             warn!("Unimplemented syscall: {}", syscall_num);
-            crate::task::exit(LinuxError::ENOSYS as _)
+            exit(LinuxError::ENOSYS as _)
         }
     };
     let ans = result.unwrap_or_else(|err| -err.code() as _);

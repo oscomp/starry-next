@@ -5,10 +5,9 @@ use axerrno::{LinuxError, LinuxResult};
 use axptr::{UserConstPtr, UserPtr};
 use axtask::{TaskExtRef, current, yield_now};
 use num_enum::TryFromPrimitive;
-
-use crate::{
+use starry_core::{
     ctypes::{WaitFlags, WaitStatus},
-    task::wait_pid,
+    task::{exec, exit, wait_pid},
 };
 
 /// ARCH_PRCTL codes
@@ -51,12 +50,12 @@ pub fn sys_exit(status: i32) -> ! {
         }
         // TODO: wake up threads, which are blocked by futex, and waiting for the address pointed by clear_child_tid
     }
-    crate::task::exit(status);
+    exit(status);
 }
 
 pub fn sys_exit_group(status: i32) -> ! {
     warn!("Temporarily replace sys_exit_group with sys_exit");
-    crate::task::exit(status);
+    exit(status);
 }
 
 /// To set the clear_child_tid field in the task extended data.
@@ -70,7 +69,6 @@ pub fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> LinuxResult<isize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[apply(syscall_instrument)]
 pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>) -> LinuxResult<isize> {
     use axerrno::LinuxError;
     match ArchPrctlCode::try_from(code).map_err(|_| LinuxError::EINVAL)? {
@@ -206,7 +204,7 @@ pub fn sys_execve(
         path_str, args, envs
     );
 
-    if let Err(e) = crate::task::exec(path_str, &args, &envs) {
+    if let Err(e) = exec(path_str, &args, &envs) {
         error!("Failed to exec: {:?}", e);
         return Err::<isize, _>(LinuxError::ENOSYS);
     }

@@ -1,3 +1,9 @@
+use core::{
+    alloc::Layout,
+    cell::UnsafeCell,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -8,18 +14,9 @@ use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
 use axptr::AddrSpaceProvider;
 use axsignal::SignalManager;
-use core::{
-    alloc::Layout,
-    cell::UnsafeCell,
-    sync::atomic::{AtomicU64, Ordering},
-};
 use memory_addr::VirtAddrRange;
 use spin::Once;
 
-use crate::{
-    copy_from_kernel,
-    ctypes::{CloneFlags, TimeStat, WaitStatus},
-};
 use axhal::{
     arch::{TrapFrame, UspaceContext},
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
@@ -28,6 +25,11 @@ use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
 use axsync::{Mutex, spin::SpinNoIrq};
 use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
+
+use crate::{
+    ctypes::{CloneFlags, TimeStat, WaitStatus},
+    mm::copy_from_kernel,
+};
 
 /// Task extended data for the monolithic kernel.
 pub struct TaskExt {
@@ -97,8 +99,8 @@ impl TaskExt {
                 let kstack_top = curr.kernel_stack_top().unwrap();
                 info!(
                     "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                    curr.task_ext().uctx.trap_frame().ip(),
-                    curr.task_ext().uctx.trap_frame().sp(),
+                    curr.task_ext().uctx.ip(),
+                    curr.task_ext().uctx.sp(),
                     kstack_top,
                 );
                 unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };
@@ -118,17 +120,25 @@ impl TaskExt {
         new_task
             .ctx_mut()
             .set_page_table_root(new_aspace.page_table_root());
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        new_task
+            .ctx_mut()
+            .set_tls(axhal::arch::read_thread_pointer().into());
 
         let mut trap_frame =
             read_trapframe_from_kstack(current_task.get_kernel_stack_top().unwrap());
         if let Some(stack) = stack {
             trap_frame.set_sp(stack);
         }
+        let mut new_uctx = UspaceContext::from(&trap_frame);
         // Skip current instruction
         #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-        trap_frame.set_ip(trap_frame.ip() + 4);
-        trap_frame.set_retval(0);
-        let new_uctx = UspaceContext::from(&trap_frame);
+        {
+            let new_uctx_ip = new_uctx.ip();
+            new_uctx.set_ip(new_uctx_ip + 4);
+        }
+
+        new_uctx.set_retval(0);
         let return_id: u64 = new_task.id().as_u64();
         let new_task_ext = TaskExt::new(
             return_id as usize,
@@ -143,26 +153,25 @@ impl TaskExt {
         Ok(return_id)
     }
 
-    pub(crate) fn clear_child_tid(&self) -> u64 {
+    pub fn clear_child_tid(&self) -> u64 {
         self.clear_child_tid
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    pub(crate) fn set_clear_child_tid(&self, clear_child_tid: u64) {
+    pub fn set_clear_child_tid(&self, clear_child_tid: u64) {
         self.clear_child_tid
             .store(clear_child_tid, core::sync::atomic::Ordering::Relaxed);
     }
 
-    pub(crate) fn get_parent(&self) -> u64 {
+    pub fn get_parent(&self) -> u64 {
         self.parent_id.load(Ordering::Acquire)
     }
 
-    #[allow(unused)]
-    pub(crate) fn set_parent(&self, parent_id: u64) {
+    pub fn set_parent(&self, parent_id: u64) {
         self.parent_id.store(parent_id, Ordering::Release);
     }
 
-    pub(crate) fn ns_init_new(&self) {
+    fn ns_init_new(&self) {
         FD_TABLE
             .deref_from(&self.ns)
             .init_new(FD_TABLE.copy_inner());
@@ -193,20 +202,19 @@ impl TaskExt {
         unsafe { (*time).output() }
     }
 
-    pub(crate) fn get_heap_bottom(&self) -> u64 {
+    pub fn get_heap_bottom(&self) -> u64 {
         self.heap_bottom.load(Ordering::Acquire)
     }
 
-    #[allow(unused)]
-    pub(crate) fn set_heap_bottom(&self, bottom: u64) {
+    pub fn set_heap_bottom(&self, bottom: u64) {
         self.heap_bottom.store(bottom, Ordering::Release)
     }
 
-    pub(crate) fn get_heap_top(&self) -> u64 {
+    pub fn get_heap_top(&self) -> u64 {
         self.heap_top.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_heap_top(&self, top: u64) {
+    pub fn set_heap_top(&self, top: u64) {
         self.heap_top.store(top, Ordering::Release)
     }
 }
@@ -265,8 +273,8 @@ pub fn spawn_user_task(
             let kstack_top = curr.kernel_stack_top().unwrap();
             info!(
                 "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",
-                curr.task_ext().uctx.trap_frame().ip(),
-                curr.task_ext().uctx.trap_frame().sp(),
+                curr.task_ext().uctx.ip(),
+                curr.task_ext().uctx.sp(),
                 kstack_top,
             );
             unsafe { curr.task_ext().uctx.enter_uspace(kstack_top) };
