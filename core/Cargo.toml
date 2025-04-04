@@ -16,6 +16,8 @@ axns.workspace = true
 axsync.workspace = true
 axtask.workspace = true
 arceos_posix_api.workspace = true
+axsignal.workspace = true
+axptr.workspace = true
 
 axerrno.workspace = true
 bitflags.workspace = true

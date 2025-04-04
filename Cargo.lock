@@ -417,6 +417,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "axptr"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axptr.git#d5f3a2939097f9059362634f78e616c18133605d"
+dependencies = [
+ "axerrno",
+ "axhal",
+ "axmm",
+ "axtask",
+ "memory_addr",
+ "percpu",
+]
+
+[[package]]
 name = "axruntime"
 version = "0.1.0"
 dependencies = [
@@ -434,6 +447,21 @@ dependencies = [
  "ctor_bare",
  "kernel_guard",
  "percpu",
+]
+
+[[package]]
+name = "axsignal"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axsignal.git#e5b0245eb2bc98f5978a7aacef70c95b7ce187fe"
+dependencies = [
+ "arceos_posix_api",
+ "axconfig",
+ "axerrno",
+ "axhal",
+ "axptr",
+ "axtask",
+ "bitflags 2.9.0",
+ "log",
 ]
 
 [[package]]
@@ -989,22 +1017,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macro_rules_attribute"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a82271f7bc033d84bbca59a3ce3e4159938cb08a9c3aebbe54d215131518a13"
-dependencies = [
- "macro_rules_attribute-proc_macro",
- "paste",
-]
-
-[[package]]
-name = "macro_rules_attribute-proc_macro"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8dd856d451cc0da70e2ef2ce95a18e39a93b7558bedf10201ad28503f918568"
-
-[[package]]
 name = "managed"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1414,10 +1426,12 @@ dependencies = [
  "axfs",
  "axhal",
  "axlog",
+ "axptr",
+ "axsignal",
  "axsync",
  "axtask",
  "bitflags 2.9.0",
- "macro_rules_attribute",
+ "linkme",
  "memory_addr",
  "num_enum",
  "starry-core",
@@ -1437,6 +1451,8 @@ dependencies = [
  "axlog",
  "axmm",
  "axns",
+ "axptr",
+ "axsignal",
  "axsync",
  "axtask",
  "bitflags 2.9.0",

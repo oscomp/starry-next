@@ -37,6 +37,9 @@ axns = { git = "https://github.com/oscomp/arceos.git", features = [
 ] }
 axsync = { git = "https://github.com/oscomp/arceos.git" }
 axtask = { git = "https://github.com/oscomp/arceos.git" }
+axptr = { git = "https://github.com/Starry-OS/axptr.git" }
+axsignal = { git = "https://github.com/Starry-OS/axsignal.git" }
+
 
 axerrno = "0.1"
 bitflags = "2.6"

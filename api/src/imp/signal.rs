@@ -1,25 +1,271 @@
-use core::ffi::c_void;
+use core::time::Duration;
 
-use axerrno::LinuxResult;
+use arceos_posix_api as api;
+use axerrno::{LinuxError, LinuxResult};
+use axhal::{
+    arch::TrapFrame,
+    trap::{POST_TRAP, register_trap_handler},
+};
+use axptr::{UserConstPtr, UserPtr};
+use axsignal::{
+    SIGKILL, SIGSTOP,
+    ctypes::{SignalInfo, SignalSet, k_sigaction},
+};
+use axtask::{TaskExtRef, current};
 
-use crate::ptr::{UserConstPtr, UserPtr};
+#[register_trap_handler(POST_TRAP)]
+fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
+    if !from_user {
+        return;
+    }
+
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+    if sigman.prevent_signal_handling {
+        sigman.prevent_signal_handling = false;
+        return;
+    }
+    while let Some(sig) = sigman.dequeue_signal() {
+        if sigman.run_action(tf, sig) {
+            break;
+        }
+    }
+}
+
+fn check_sigset_size(size: usize) -> LinuxResult<()> {
+    if size != size_of::<SignalSet>() {
+        return Err(LinuxError::EINVAL);
+    }
+    Ok(())
+}
 
 pub fn sys_rt_sigprocmask(
-    _how: i32,
-    _set: UserConstPtr<c_void>,
-    _oldset: UserPtr<c_void>,
-    _sigsetsize: usize,
+    how: i32,
+    set: UserConstPtr<SignalSet>,
+    oldset: UserPtr<SignalSet>,
+    sigsetsize: usize,
 ) -> LinuxResult<isize> {
-    warn!("sys_rt_sigprocmask: not implemented");
+    check_sigset_size(sigsetsize)?;
+
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+
+    if let Some(mut oldset) = oldset.nullable() {
+        *oldset.get(curr.task_ext())? = sigman.blocked;
+    }
+
+    if let Some(set) = set.nullable() {
+        let set = set.get(curr.task_ext())?;
+        match how {
+            // SIG_BLOCK
+            0 => sigman.blocked.add_from(&set),
+            // SIG_UNBLOCK
+            1 => sigman.blocked.remove_from(&set),
+            // SIG_SETMASK
+            2 => sigman.blocked = *set,
+            _ => return Err(LinuxError::EINVAL),
+        }
+    }
+
     Ok(0)
 }
 
 pub fn sys_rt_sigaction(
-    _signum: i32,
-    _act: UserConstPtr<c_void>,
-    _oldact: UserPtr<c_void>,
-    _sigsetsize: usize,
+    signum: i32,
+    act: UserConstPtr<k_sigaction>,
+    oldact: UserPtr<k_sigaction>,
+    sigsetsize: usize,
 ) -> LinuxResult<isize> {
-    warn!("sys_rt_sigaction: not implemented");
+    check_sigset_size(sigsetsize)?;
+
+    let signum = signum as u32;
+    if !(1..32).contains(&signum) {
+        return Err(LinuxError::EINVAL);
+    }
+    if signum == SIGKILL || signum == SIGSTOP {
+        return Err(LinuxError::EINVAL);
+    }
+
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+
+    if let Some(mut oldact) = oldact.nullable() {
+        let oldact = oldact.get(curr.task_ext())?;
+        sigman.action(signum).to_ctype(oldact);
+    }
+
+    if let Some(act) = act.nullable() {
+        let act = act.get(curr.task_ext())?;
+        sigman.set_action(signum, (*act).try_into()?);
+    }
+
     Ok(0)
+}
+
+pub fn sys_rt_sigpending(mut set: UserPtr<SignalSet>, sigsetsize: usize) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let curr = current();
+    let sigman = curr.task_ext().signal.lock();
+
+    *set.get(curr.task_ext())? = sigman.pending;
+
+    Ok(0)
+}
+
+pub fn sys_rt_sigreturn(tf: &mut TrapFrame) -> LinuxResult<isize> {
+    let curr = current();
+    let mut sigman = curr.task_ext().signal.lock();
+    sigman.restore(tf, curr.task_ext());
+    Ok(tf.retval() as _)
+}
+
+pub fn sys_rt_sigtimedwait(
+    set: UserConstPtr<SignalSet>,
+    info: UserPtr<SignalInfo>,
+    timeout: UserConstPtr<api::ctypes::timespec>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let curr = current();
+    let mut set = *set.get(curr.task_ext())?;
+
+    let timeout = timeout
+        .nullable()
+        .map(|spec| {
+            spec.get(curr.task_ext())
+                .map(|spec| Duration::new(spec.tv_sec as u64, spec.tv_nsec as u32))
+        })
+        .transpose()?;
+
+    let mut sigman = curr.task_ext().signal.lock();
+
+    // Non-blocked signals cannot be waited
+    set.remove_from(&!sigman.blocked);
+
+    if let Some(siginfo) = sigman.dequeue_signal_in(&set) {
+        if let Some(mut info) = info.nullable() {
+            *info.get(curr.task_ext())? = siginfo;
+        }
+        return Ok(0);
+    }
+
+    sigman.waiting = set;
+    let wq = sigman.wq.clone();
+    drop(sigman);
+
+    if let Some(timeout) = timeout {
+        wq.wait_timeout(timeout);
+    } else {
+        wq.wait();
+    }
+
+    let mut sigman = curr.task_ext().signal.lock();
+    if let Some(siginfo) = sigman.dequeue_signal_in(&set) {
+        if let Some(mut info) = info.nullable() {
+            *info.get(curr.task_ext())? = siginfo;
+        }
+        return Ok(0);
+    }
+
+    // TODO: EINTR
+
+    Err(LinuxError::EAGAIN)
+}
+
+pub fn sys_rt_sigsuspend(
+    tf: &mut TrapFrame,
+    mut set: UserPtr<SignalSet>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let curr = current();
+    let set = set.get(curr.task_ext())?;
+
+    set.remove(SIGKILL);
+    set.remove(SIGSTOP);
+
+    let mut sigman = curr.task_ext().signal.lock();
+    let old_blocked = sigman.blocked;
+
+    sigman.blocked = *set;
+    sigman.waiting = !*set;
+    drop(sigman);
+
+    // TODO: document this
+    #[cfg(any(
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+        target_arch = "loongarch64"
+    ))]
+    tf.set_ip(tf.ip() + 4);
+    tf.set_retval((-LinuxError::EINTR.code() as isize) as usize);
+
+    'wait: loop {
+        let mut sigman = curr.task_ext().signal.lock();
+        while let Some(sig) = sigman.dequeue_signal() {
+            if sigman.run_action(tf, sig) {
+                sigman.blocked = old_blocked;
+                sigman.prevent_signal_handling = true;
+                break 'wait;
+            }
+        }
+        let wq = sigman.wq.clone();
+        drop(sigman);
+        wq.wait();
+    }
+    Ok(0)
+}
+
+pub fn sys_kill(pid: i32, sig: i32) -> LinuxResult<isize> {
+    if !(1..32).contains(&sig) {
+        return Err(LinuxError::EINVAL);
+    }
+    if sig == 0 {
+        // TODO: should also check permissions
+        return Ok(0);
+    }
+
+    let sig = SignalInfo::new(sig as u32, SignalInfo::SI_USER);
+
+    let curr = current();
+    let mut result = 0;
+    match pid {
+        1.. => {
+            warn!("killing specified pid is only supported for child processes and self");
+            if curr.id().as_u64() == pid as u64 {
+                result += curr.task_ext().signal.lock().send_signal(sig) as isize;
+            } else {
+                let children = curr.task_ext().children.lock();
+                let child = children.iter().find(|it| it.id().as_u64() == pid as u64);
+                if let Some(child) = child {
+                    result += child.task_ext().signal.lock().send_signal(sig) as isize;
+                } else {
+                    return Err(LinuxError::ESRCH);
+                }
+            }
+        }
+        0 => {
+            // TODO: this should send signal to the current process group
+            result += curr.task_ext().signal.lock().send_signal(sig) as isize;
+        }
+        -1 => {
+            // TODO: this should "send signal to every process for which the
+            // calling process has permission to send signals, except for
+            // process 1"
+            let mut guard = curr.task_ext().signal.lock();
+            for child in curr.task_ext().children.lock().iter() {
+                result += child.task_ext().signal.lock().send_signal(sig.clone()) as isize;
+            }
+            result += guard.send_signal(sig) as isize;
+        }
+        ..-1 => {
+            warn!("killing specified process group is not implemented");
+            return Err(LinuxError::ENOSYS);
+        }
+    }
+
+    Ok(result)
 }
