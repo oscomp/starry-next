@@ -12,6 +12,8 @@ use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
 
+use crate::task::exit_fault;
+
 pub fn new_user_aspace_empty() -> AxResult<AddrSpace> {
     AddrSpace::new_empty(
         VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
@@ -194,18 +196,22 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
         return false;
     }
 
-    if !axtask::current()
+    let curr = axtask::current();
+    if !curr
         .task_ext()
+        .process_data()
         .aspace
         .lock()
         .handle_page_fault(vaddr, access_flags)
     {
         warn!(
-            "{}: segmentation fault at {:#x}, exit!",
-            axtask::current().id_name(),
+            "{} ({:?}): segmentation fault at {:#x}, exit!",
+            curr.id_name(),
+            curr.task_ext().thread,
             vaddr
         );
-        axtask::exit(-1);
+        // FIXME: change to SIGSEGV
+        exit_fault(11);
     }
     true
 }

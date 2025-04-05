@@ -11,9 +11,12 @@ axconfig.workspace = true
 axfs.workspace = true
 axhal.workspace = true
 axlog.workspace = true
+axmm.workspace = true
 axsync.workspace = true
 axtask.workspace = true
 arceos_posix_api.workspace = true
+
+axprocess.workspace = true
 
 axerrno.workspace = true
 bitflags.workspace = true
