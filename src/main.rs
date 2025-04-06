@@ -6,10 +6,11 @@
 extern crate axlog;
 extern crate alloc;
 
+mod entry;
+mod mm;
 mod syscall;
 
 use alloc::vec::Vec;
-use starry_core::entry::run_user_app;
 
 #[unsafe(no_mangle)]
 fn main() {
@@ -24,7 +25,7 @@ fn main() {
             .map(Into::into)
             .collect::<Vec<_>>();
 
-        let exit_code = run_user_app(&args, &[]);
+        let exit_code = entry::run_user_app(&args, &[]);
         info!("User task {} exited with code: {:?}", testcase, exit_code);
     }
 }

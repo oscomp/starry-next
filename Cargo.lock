@@ -417,6 +417,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "axprocess"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axprocess.git#f16a5a1909688054b9fb33d3092f6f5f06bcca29"
+dependencies = [
+ "kspin",
+ "weak-map",
+]
+
+[[package]]
 name = "axruntime"
 version = "0.1.0"
 dependencies = [
@@ -1393,10 +1402,14 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "starry"
 version = "0.1.0"
 dependencies = [
+ "arceos_posix_api",
  "axerrno",
  "axfeat",
+ "axfs",
  "axhal",
  "axlog",
+ "axprocess",
+ "axsync",
  "axtask",
  "linkme",
  "starry-api",
@@ -1414,6 +1427,7 @@ dependencies = [
  "axfs",
  "axhal",
  "axlog",
+ "axprocess",
  "axsync",
  "axtask",
  "bitflags 2.9.0",
@@ -1429,7 +1443,6 @@ dependencies = [
 name = "starry-core"
 version = "0.1.0"
 dependencies = [
- "arceos_posix_api",
  "axconfig",
  "axerrno",
  "axfs",
@@ -1437,9 +1450,9 @@ dependencies = [
  "axlog",
  "axmm",
  "axns",
+ "axprocess",
  "axsync",
  "axtask",
- "bitflags 2.9.0",
  "crate_interface",
  "kernel-elf-parser",
  "linkme",
@@ -1447,6 +1460,7 @@ dependencies = [
  "numeric-enum-macro",
  "percpu",
  "spin",
+ "weak-map",
  "xmas-elf",
 ]
 
@@ -1591,6 +1605,11 @@ name = "volatile"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
+
+[[package]]
+name = "weak-map"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/weak-map.git#6a528cb160b8e2bcdb6bbc1b4086aa1de08e73ec"
 
 [[package]]
 name = "which"
