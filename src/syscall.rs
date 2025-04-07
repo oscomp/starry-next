@@ -15,7 +15,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::read => sys_read(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::write => sys_write(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::mmap => sys_mmap(
-            tf.arg0().into(),
+            tf.arg0(),
             tf.arg1() as _,
             tf.arg2() as _,
             tf.arg3() as _,
@@ -32,7 +32,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::gettimeofday => sys_get_time_of_day(tf.arg0().into()),
         Sysno::getcwd => sys_getcwd(tf.arg0().into(), tf.arg1() as _),
         Sysno::dup => sys_dup(tf.arg0() as _),
-        Sysno::dup3 => sys_dup3(tf.arg0() as _, tf.arg1() as _),
+        Sysno::dup3 => sys_dup2(tf.arg0() as _, tf.arg1() as _),
         Sysno::fcntl => sys_fcntl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         Sysno::clone => sys_clone(
             tf.arg0() as _,
@@ -95,8 +95,8 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg3() as _,
             tf.arg4().into(),
         ),
-        Sysno::munmap => sys_munmap(tf.arg0().into(), tf.arg1() as _),
-        Sysno::mprotect => sys_mprotect(tf.arg0().into(), tf.arg1() as _, tf.arg2() as _),
+        Sysno::munmap => sys_munmap(tf.arg0(), tf.arg1() as _),
+        Sysno::mprotect => sys_mprotect(tf.arg0(), tf.arg1() as _, tf.arg2() as _),
         Sysno::times => sys_times(tf.arg0().into()),
         Sysno::brk => sys_brk(tf.arg0() as _),
         #[cfg(target_arch = "x86_64")]

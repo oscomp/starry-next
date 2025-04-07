@@ -13,7 +13,6 @@ axhal.workspace = true
 axlog.workspace = true
 axsync.workspace = true
 axtask.workspace = true
-arceos_posix_api.workspace = true
 
 axerrno.workspace = true
 bitflags.workspace = true
@@ -23,7 +22,6 @@ starry-core.workspace = true
 
 macro_rules_attribute = "0.2"
 num_enum = { version = "0.7", default-features = false }
-static_assertions = "1.1"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52"
