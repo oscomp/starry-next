@@ -1,10 +1,10 @@
 use alloc::vec::Vec;
 use arceos_posix_api::{AT_FDCWD, FilePath, handle_file_path};
 use axerrno::{LinuxError, LinuxResult};
+use axptr::UserConstPtr;
 use axsync::Mutex;
+use axtask::{TaskExtRef, current};
 use core::ffi::{c_char, c_void};
-
-use crate::ptr::UserConstPtr;
 
 pub fn sys_mount(
     source: UserConstPtr<c_char>,
@@ -14,9 +14,10 @@ pub fn sys_mount(
     _data: UserConstPtr<c_void>,
 ) -> LinuxResult<isize> {
     info!("sys_mount");
-    let source = source.get_as_null_terminated()?;
-    let target = target.get_as_null_terminated()?;
-    let fs_type = fs_type.get_as_str()?;
+    let curr = current();
+    let source = source.get_as_null_terminated(curr.task_ext())?;
+    let target = target.get_as_null_terminated(curr.task_ext())?;
+    let fs_type = fs_type.get_as_str(curr.task_ext())?;
     let device_path = handle_file_path(AT_FDCWD, Some(source.as_ptr() as _), false)?;
     let mount_path = handle_file_path(AT_FDCWD, Some(target.as_ptr() as _), true)?;
     info!(
@@ -48,8 +49,8 @@ pub fn sys_mount(
 
 pub fn sys_umount2(target: UserConstPtr<c_char>, flags: i32) -> LinuxResult<isize> {
     info!("sys_umount2");
-    let target = target.get_as_null_terminated()?;
-    let mount_path = handle_file_path(AT_FDCWD, Some(target.as_ptr() as _), true)?;
+    let target = target.get_as_str(current().task_ext())?;
+    let mount_path = handle_file_path(AT_FDCWD, Some(target.as_ptr()), true)?;
     if flags != 0 {
         debug!("flags unimplemented");
         return Err(LinuxError::EPERM);

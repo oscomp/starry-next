@@ -1,6 +1,6 @@
 use axerrno::LinuxResult;
-
-use crate::ptr::{PtrWrapper, UserPtr};
+use axptr::UserPtr;
+use axtask::{current, TaskExtRef};
 
 pub fn sys_getuid() -> LinuxResult<isize> {
     Ok(0)
@@ -43,7 +43,7 @@ impl UtsName {
     }
 }
 
-pub fn sys_uname(name: UserPtr<UtsName>) -> LinuxResult<isize> {
-    unsafe { *name.get()? = UtsName::default() };
+pub fn sys_uname(mut name: UserPtr<UtsName>) -> LinuxResult<isize> {
+    *name.get(current().task_ext())? = UtsName::default();
     Ok(0)
 }

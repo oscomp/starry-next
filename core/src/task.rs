@@ -12,16 +12,19 @@ use alloc::{
 use arceos_posix_api::FD_TABLE;
 use axerrno::{AxError, AxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
+use axptr::AddrSpaceProvider;
+use axsignal::SignalManager;
+use memory_addr::VirtAddrRange;
+use spin::Once;
+
 use axhal::{
     arch::{TrapFrame, UspaceContext},
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
 };
 use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
-use axsync::Mutex;
+use axsync::{Mutex, spin::SpinNoIrq};
 use axtask::{AxTaskRef, TaskExtRef, TaskInner, current};
-use memory_addr::VirtAddrRange;
-use spin::Once;
 
 use crate::{
     ctypes::{CloneFlags, TimeStat, WaitStatus},
@@ -54,6 +57,8 @@ pub struct TaskExt {
     pub heap_bottom: AtomicU64,
     /// The user heap top
     pub heap_top: AtomicU64,
+    // The signal manager
+    pub signal: SpinNoIrq<SignalManager>,
 }
 
 impl TaskExt {
@@ -74,6 +79,7 @@ impl TaskExt {
             time: TimeStat::new().into(),
             heap_bottom: AtomicU64::new(heap_bottom),
             heap_top: AtomicU64::new(heap_bottom),
+            signal: SpinNoIrq::new(SignalManager::new()),
         }
     }
 
@@ -102,6 +108,10 @@ impl TaskExt {
             current().id_name(),
             axconfig::plat::KERNEL_STACK_SIZE,
         );
+        #[cfg(target_arch = "x86_64")]
+        new_task
+            .ctx_mut()
+            .set_tls(axhal::arch::read_thread_pointer().into());
 
         let current_task = current();
         let mut current_aspace = current_task.task_ext().aspace.lock();
@@ -115,11 +125,12 @@ impl TaskExt {
             .ctx_mut()
             .set_tls(axhal::arch::read_thread_pointer().into());
 
-        let trap_frame = read_trapframe_from_kstack(current_task.get_kernel_stack_top().unwrap());
-        let mut new_uctx = UspaceContext::from(&trap_frame);
+        let mut trap_frame =
+            read_trapframe_from_kstack(current_task.get_kernel_stack_top().unwrap());
         if let Some(stack) = stack {
-            new_uctx.set_sp(stack);
+            trap_frame.set_sp(stack);
         }
+        let mut new_uctx = UspaceContext::from(&trap_frame);
         // Skip current instruction
         #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
         {
@@ -208,6 +219,12 @@ impl TaskExt {
     }
 }
 
+impl AddrSpaceProvider for &TaskExt {
+    fn with_addr_space<R>(&mut self, f: impl FnOnce(&mut AddrSpace) -> R) -> R {
+        f(&mut self.aspace.lock())
+    }
+}
+
 struct AxNamespaceImpl;
 #[crate_interface::impl_interface]
 impl AxNamespaceIf for AxNamespaceImpl {
@@ -292,10 +309,7 @@ pub fn read_trapframe_from_kstack(kstack_top: usize) -> TrapFrame {
     unsafe { *trap_frame_ptr }
 }
 
-/// # Safety
-///
-/// The caller must ensure that the pointer is valid and properly aligned if it's not null.
-pub unsafe fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitStatus> {
+pub fn wait_pid(pid: i32, exit_code_ptr: Option<&mut i32>) -> Result<u64, WaitStatus> {
     let curr_task = current();
     let mut exit_task_id: usize = 0;
     let mut answer_id: u64 = 0;
@@ -317,10 +331,8 @@ pub unsafe fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitSta
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_ptr) = exit_code_ptr {
+                    *exit_code_ptr = exit_code << 8;
                 }
                 answer_id = child.id().as_u64();
                 break;
@@ -334,10 +346,8 @@ pub unsafe fn wait_pid(pid: i32, exit_code_ptr: *mut i32) -> Result<u64, WaitSta
                     exit_code
                 );
                 exit_task_id = index;
-                if !exit_code_ptr.is_null() {
-                    unsafe {
-                        *exit_code_ptr = exit_code << 8;
-                    }
+                if let Some(exit_code_ptr) = exit_code_ptr {
+                    *exit_code_ptr = exit_code << 8;
                 }
                 answer_id = child.id().as_u64();
             } else {
@@ -415,4 +425,8 @@ pub fn time_stat_output() -> (usize, usize, usize, usize) {
         stime_ns / NANOS_PER_SEC as usize,
         stime_ns / NANOS_PER_MICROS as usize,
     )
+}
+
+pub fn exit(exit_code: i32) -> ! {
+    axtask::exit(exit_code)
 }
