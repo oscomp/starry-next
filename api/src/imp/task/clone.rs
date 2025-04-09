@@ -110,14 +110,6 @@ pub fn sys_clone(
     if stack != 0 {
         new_uctx.set_sp(stack);
     }
-    // Skip current instruction
-    // FIXME: we should do this in arceos before calling `handle_syscall`.
-    // See: https://github.com/oscomp/arceos/commit/13ff3f58bd825c37ea5eef3393a4f8c0bb5b4f41
-    #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-    {
-        let new_uctx_ip = new_uctx.ip();
-        new_uctx.set_ip(new_uctx_ip + 4);
-    }
     if flags.contains(CloneFlags::SETTLS) {
         warn!("sys_clone: CLONE_SETTLS is not supported yet");
     }
