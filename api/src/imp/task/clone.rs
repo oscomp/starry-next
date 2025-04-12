@@ -145,6 +145,10 @@ pub fn sys_clone(
     }
 
     let process = if flags.contains(CloneFlags::THREAD) {
+        new_task
+            .ctx_mut()
+            .set_page_table_root(axhal::arch::read_page_table_root());
+
         curr.task_ext().thread.process()
     } else {
         // create a new process
