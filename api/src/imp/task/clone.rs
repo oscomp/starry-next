@@ -7,12 +7,7 @@ use axprocess::Pid;
 use axsync::Mutex;
 use axtask::{TaskExtRef, current};
 use bitflags::bitflags;
-use linux_raw_sys::general::{
-    CLONE_CHILD_CLEARTID, CLONE_CHILD_SETTID, CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_NEWCGROUP,
-    CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUSER, CLONE_NEWUTS,
-    CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS, CLONE_SIGHAND, CLONE_SYSVSEM,
-    CLONE_THREAD, CLONE_UNTRACED, CLONE_VFORK, CLONE_VM, SIGCHLD,
-};
+use linux_raw_sys::general::*;
 use macro_rules_attribute::apply;
 use starry_core::{
     mm::copy_from_kernel,
@@ -123,7 +118,9 @@ pub fn sys_clone(
         let new_uctx_ip = new_uctx.ip();
         new_uctx.set_ip(new_uctx_ip + 4);
     }
-    // TODO: check SETTLS
+    if flags.contains(CloneFlags::SETTLS) {
+        warn!("sys_clone: CLONE_SETTLS is not supported yet");
+    }
     new_uctx.set_retval(0);
 
     let set_child_tid = if flags.contains(CloneFlags::CHILD_SETTID) {

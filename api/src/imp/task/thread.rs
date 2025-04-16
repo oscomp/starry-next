@@ -51,9 +51,11 @@ enum ArchPrctlCode {
 ///
 /// The set_tid_address() always succeeds
 #[apply(syscall_instrument)]
-pub fn sys_set_tid_address(tid_ptd: usize) -> LinuxResult<isize> {
+pub fn sys_set_tid_address(clear_child_tid: usize) -> LinuxResult<isize> {
     let curr = current();
-    curr.task_ext().thread_data().set_clear_child_tid(tid_ptd);
+    curr.task_ext()
+        .thread_data()
+        .set_clear_child_tid(clear_child_tid);
     Ok(curr.id().as_u64() as isize)
 }
 
