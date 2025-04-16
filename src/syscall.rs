@@ -44,13 +44,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             } else {
                 (tf.arg4() as _, tf.arg3() as _)
             };
-            sys_clone(
-                tf.arg0() as _,
-                tf.arg1() as _,
-                tf.arg2().into(),
-                child_tid,
-                tls,
-            )
+            sys_clone(tf.arg0() as _, tf.arg1() as _, tf.arg2(), child_tid, tls)
         }
         #[cfg(target_arch = "x86_64")]
         Sysno::fork => sys_fork(),
