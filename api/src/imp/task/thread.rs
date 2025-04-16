@@ -3,10 +3,7 @@ use axtask::{TaskExtRef, current};
 use macro_rules_attribute::apply;
 use num_enum::TryFromPrimitive;
 
-use crate::{
-    ptr::{PtrWrapper, UserConstPtr},
-    syscall_instrument,
-};
+use crate::syscall_instrument;
 
 #[apply(syscall_instrument)]
 pub fn sys_getpid() -> LinuxResult<isize> {
@@ -54,19 +51,17 @@ enum ArchPrctlCode {
 ///
 /// The set_tid_address() always succeeds
 #[apply(syscall_instrument)]
-pub fn sys_set_tid_address(tid_ptd: UserConstPtr<i32>) -> LinuxResult<isize> {
+pub fn sys_set_tid_address(tid_ptd: usize) -> LinuxResult<isize> {
     let curr = current();
-    curr.task_ext()
-        .thread_data()
-        .set_clear_child_tid(tid_ptd.address().as_ptr() as _);
+    curr.task_ext().thread_data().set_clear_child_tid(tid_ptd);
     Ok(curr.id().as_u64() as isize)
 }
 
 #[cfg(target_arch = "x86_64")]
 #[apply(syscall_instrument)]
 pub fn sys_arch_prctl(code: i32, addr: crate::ptr::UserPtr<u64>) -> LinuxResult<isize> {
-    use axerrno::LinuxError;
-    match ArchPrctlCode::try_from(code).map_err(|_| LinuxError::EINVAL)? {
+    use crate::ptr::PtrWrapper;
+    match ArchPrctlCode::try_from(code).map_err(|_| axerrno::LinuxError::EINVAL)? {
         // According to Linux implementation, SetFs & SetGs does not return
         // error at all
         ArchPrctlCode::SetFs => {
@@ -95,6 +90,6 @@ pub fn sys_arch_prctl(code: i32, addr: crate::ptr::UserPtr<u64>) -> LinuxResult<
             Ok(0)
         }
         ArchPrctlCode::GetCpuid => Ok(0),
-        ArchPrctlCode::SetCpuid => Err(LinuxError::ENODEV),
+        ArchPrctlCode::SetCpuid => Err(axerrno::LinuxError::ENODEV),
     }
 }

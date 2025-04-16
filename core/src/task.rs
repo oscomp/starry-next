@@ -23,10 +23,18 @@ use weak_map::WeakMap;
 
 use crate::time::TimeStat;
 
-pub fn new_user_task(name: &str, uctx: UspaceContext) -> TaskInner {
+pub fn new_user_task(
+    name: &str,
+    uctx: UspaceContext,
+    set_child_tid: Option<&'static mut Pid>,
+) -> TaskInner {
     TaskInner::new(
         move || {
             let curr = axtask::current();
+            if let Some(tid) = set_child_tid {
+                *tid = curr.id().as_u64() as Pid;
+            }
+
             let kstack_top = curr.kernel_stack_top().unwrap();
             info!(
                 "Enter user space: entry={:#x}, ustack={:#x}, kstack={:#x}",

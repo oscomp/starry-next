@@ -37,13 +37,21 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::dup => sys_dup(tf.arg0() as _),
         Sysno::dup3 => sys_dup3(tf.arg0() as _, tf.arg1() as _),
         Sysno::fcntl => sys_fcntl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
-        Sysno::clone => sys_clone(
-            tf.arg0() as _,
-            tf.arg1() as _,
-            tf.arg2() as _,
-            tf.arg3() as _,
-            tf.arg4() as _,
-        ),
+        Sysno::clone => {
+            let (child_tid, tls) = if cfg!(any(target_arch = "x86_64", target_arch = "loongarch64"))
+            {
+                (tf.arg3() as _, tf.arg4() as _)
+            } else {
+                (tf.arg4() as _, tf.arg3() as _)
+            };
+            sys_clone(
+                tf.arg0() as _,
+                tf.arg1() as _,
+                tf.arg2().into(),
+                child_tid,
+                tls,
+            )
+        }
         #[cfg(target_arch = "x86_64")]
         Sysno::fork => sys_fork(),
         Sysno::wait4 => sys_waitpid(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
@@ -106,7 +114,7 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
         Sysno::brk => sys_brk(tf.arg0() as _),
         #[cfg(target_arch = "x86_64")]
         Sysno::arch_prctl => sys_arch_prctl(tf.arg0() as _, tf.arg1().into()),
-        Sysno::set_tid_address => sys_set_tid_address(tf.arg0().into()),
+        Sysno::set_tid_address => sys_set_tid_address(tf.arg0()),
         Sysno::clock_gettime => sys_clock_gettime(tf.arg0() as _, tf.arg1().into()),
         Sysno::getuid => sys_getuid(),
         Sysno::rt_sigprocmask => sys_rt_sigprocmask(

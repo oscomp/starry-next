@@ -26,7 +26,7 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
 
     let uctx = UspaceContext::new(entry_vaddr.into(), ustack_top, 2333);
 
-    let mut task = new_user_task(name, uctx);
+    let mut task = new_user_task(name, uctx, None);
     task.ctx_mut().set_page_table_root(uspace.page_table_root());
 
     let process_data = ProcessData::new(exe_path, Arc::new(Mutex::new(uspace)));

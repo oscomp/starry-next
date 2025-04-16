@@ -19,7 +19,10 @@ use starry_core::{
     task::{ProcessData, TaskExt, ThreadData, add_thread_to_table, new_user_task},
 };
 
-use crate::syscall_instrument;
+use crate::{
+    ptr::{PtrWrapper, UserPtr},
+    syscall_instrument,
+};
 
 bitflags! {
     /// Options for use with [`sys_clone`].
@@ -88,17 +91,17 @@ bitflags! {
 pub fn sys_clone(
     flags: u32,
     stack: usize,
-    _ptid: usize,
-    _tls: usize,
-    _ctid: usize,
+    parent_tid: usize,
+    child_tid: usize,
+    tls: usize,
 ) -> LinuxResult<isize> {
     const FLAG_MASK: u32 = 0xff;
-    let _exit_signal = flags & FLAG_MASK;
+    let exit_signal = flags & FLAG_MASK;
     let flags = CloneFlags::from_bits_truncate(flags & !FLAG_MASK);
 
     info!(
-        "sys_clone <= flags: {:?}, exit_signal: {}, stack: {:#x}",
-        flags, _exit_signal, stack
+        "sys_clone <= flags: {:?}, exit_signal: {}, stack: {:#x}, ptid: {:#x}, ctid: {:#x}, tls: {:#x}",
+        flags, exit_signal, stack, parent_tid, child_tid, tls
     );
 
     if flags.contains(CloneFlags::THREAD) && !flags.contains(CloneFlags::VM | CloneFlags::SIGHAND) {
@@ -123,7 +126,12 @@ pub fn sys_clone(
     // TODO: check SETTLS
     new_uctx.set_retval(0);
 
-    let mut new_task = new_user_task(curr.name(), new_uctx);
+    let set_child_tid = if flags.contains(CloneFlags::CHILD_SETTID) {
+        unsafe { UserPtr::<u32>::from(child_tid).get()?.as_mut() }
+    } else {
+        None
+    };
+    let mut new_task = new_user_task(curr.name(), new_uctx, set_child_tid);
 
     // FIXME: remove this when we fix the tls issue
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -132,6 +140,10 @@ pub fn sys_clone(
         .set_tls(axhal::arch::read_thread_pointer().into());
 
     let tid = new_task.id().as_u64() as Pid;
+    if flags.contains(CloneFlags::PARENT_SETTID) {
+        unsafe { UserPtr::<Pid>::from(parent_tid).get()?.write(tid) };
+    }
+
     let process = if flags.contains(CloneFlags::THREAD) {
         curr.task_ext().thread.process()
     } else {
@@ -192,7 +204,12 @@ pub fn sys_clone(
         &builder.data(process_data).build()
     };
 
-    let thread = process.new_thread(tid).data(ThreadData::new()).build();
+    let thread_data = ThreadData::new();
+    if flags.contains(CloneFlags::CHILD_CLEARTID) {
+        thread_data.set_clear_child_tid(child_tid);
+    }
+
+    let thread = process.new_thread(tid).data(thread_data).build();
     add_thread_to_table(&thread);
     new_task.init_task_ext(TaskExt::new(thread));
     axtask::spawn_task(new_task);
