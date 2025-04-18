@@ -9,10 +9,7 @@ use axtask::{TaskExtRef, current};
 use bitflags::bitflags;
 use linux_raw_sys::general::*;
 use macro_rules_attribute::apply;
-use starry_core::{
-    mm::copy_from_kernel,
-    task::{ProcessData, TaskExt, ThreadData, add_thread_to_table, new_user_task},
-};
+use starry_core::{mm::copy_from_kernel, task::{add_thread_to_table, new_user_task, ProcessData, TaskExt, ThreadData}};
 
 use crate::{
     ptr::{PtrWrapper, UserPtr},
@@ -205,7 +202,7 @@ pub fn sys_clone(
         &builder.data(process_data).build()
     };
 
-    let thread_data = ThreadData::new();
+    let thread_data = ThreadData::new(process.data().unwrap());
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
         thread_data.set_clear_child_tid(child_tid);
     }

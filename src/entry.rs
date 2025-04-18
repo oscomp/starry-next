@@ -5,7 +5,7 @@ use axhal::arch::UspaceContext;
 use axprocess::{Pid, init_proc};
 use axsync::Mutex;
 use starry_core::{
-    mm::{copy_from_kernel, load_user_app, new_user_aspace_empty},
+    mm::{copy_from_kernel, load_user_app, map_trampoline, new_user_aspace_empty},
     task::{ProcessData, TaskExt, ThreadData, add_thread_to_table, new_user_task},
 };
 
@@ -13,6 +13,7 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let mut uspace = new_user_aspace_empty()
         .and_then(|mut it| {
             copy_from_kernel(&mut it)?;
+            map_trampoline(&mut it)?;
             Ok(it)
         })
         .expect("Failed to create user address space");
@@ -44,7 +45,10 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let tid = task.id().as_u64() as Pid;
     let process = init_proc().fork(tid).data(process_data).build();
 
-    let thread = process.new_thread(tid).data(ThreadData::new()).build();
+    let thread = process
+        .new_thread(tid)
+        .data(ThreadData::new(process.data().unwrap()))
+        .build();
     add_thread_to_table(&thread);
 
     task.init_task_ext(TaskExt::new(thread));
