@@ -14,3 +14,5 @@ test_sigaction ok1
 test_sigaction ok2
 test_sigprocmask ok1
 test_sigprocmask ok2
+test_sigkill_stop ok1
+test_sigkill_stop ok2

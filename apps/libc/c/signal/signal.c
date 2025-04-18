@@ -166,7 +166,7 @@ int main() {
   test_term();
   test_sigaction();
   test_sigprocmask();
-  //   test_sigkill_stop();
+  test_sigkill_stop();
   //   test_sigwait();
   //   test_sigsuspend();
   return 0;
