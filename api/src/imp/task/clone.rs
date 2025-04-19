@@ -86,8 +86,8 @@ bitflags! {
 pub fn sys_clone(
     flags: u32,
     stack: usize,
-    parent_tid: usize,
-    child_tid: usize,
+    ptid: usize,
+    ctid: usize,
     tls: usize,
 ) -> LinuxResult<isize> {
     const FLAG_MASK: u32 = 0xff;
@@ -96,7 +96,7 @@ pub fn sys_clone(
 
     info!(
         "sys_clone <= flags: {:?}, exit_signal: {}, stack: {:#x}, ptid: {:#x}, ctid: {:#x}, tls: {:#x}",
-        flags, exit_signal, stack, parent_tid, child_tid, tls
+        flags, exit_signal, stack, ptid, ctid, tls
     );
 
     if flags.contains(CloneFlags::THREAD) && !flags.contains(CloneFlags::VM | CloneFlags::SIGHAND) {
@@ -110,33 +110,39 @@ pub fn sys_clone(
     if stack != 0 {
         new_uctx.set_sp(stack);
     }
-    if flags.contains(CloneFlags::SETTLS) {
-        warn!("sys_clone: CLONE_SETTLS is not supported yet");
-    }
     new_uctx.set_retval(0);
 
     let set_child_tid = if flags.contains(CloneFlags::CHILD_SETTID) {
-        unsafe { UserPtr::<u32>::from(child_tid).get()?.as_mut() }
+        unsafe { UserPtr::<u32>::from(ctid).get()?.as_mut() }
     } else {
         None
     };
+    if flags.contains(CloneFlags::SETTLS) {
+        let _ = new_uctx.try_set_tls(tls);
+    }
     let mut new_task = new_user_task(curr.name(), new_uctx, set_child_tid);
 
-    // FIXME: remove this when we fix the tls issue
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    new_task
-        .ctx_mut()
-        .set_tls(axhal::arch::read_thread_pointer().into());
+    if flags.contains(CloneFlags::SETTLS) {
+        new_task.ctx_mut().set_tls(tls.into());
+    } else {
+        new_task
+            .ctx_mut()
+            .set_tls(axhal::arch::read_thread_pointer().into());
+    }
 
     let tid = new_task.id().as_u64() as Pid;
     if flags.contains(CloneFlags::PARENT_SETTID) {
-        unsafe { UserPtr::<Pid>::from(parent_tid).get()?.write(tid) };
+        unsafe { UserPtr::<Pid>::from(ctid).get()?.write(tid) };
     }
 
     let process = if flags.contains(CloneFlags::THREAD) {
-        new_task
-            .ctx_mut()
-            .set_page_table_root(axhal::arch::read_page_table_root());
+        new_task.ctx_mut().set_page_table_root(
+            curr.task_ext()
+                .process_data()
+                .aspace
+                .lock()
+                .page_table_root(),
+        );
 
         curr.task_ext().thread.process()
     } else {
@@ -199,7 +205,7 @@ pub fn sys_clone(
 
     let thread_data = ThreadData::new(process.data().unwrap());
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
-        thread_data.set_clear_child_tid(child_tid);
+        thread_data.set_clear_child_tid(ctid);
     }
 
     let thread = process.new_thread(tid).data(thread_data).build();

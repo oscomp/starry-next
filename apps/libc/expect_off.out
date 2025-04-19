@@ -16,3 +16,9 @@ test_sigprocmask ok1
 test_sigprocmask ok2
 test_sigkill_stop ok1
 test_sigkill_stop ok2
+test_sigwait ok1
+test_sigwait ok2
+test_sigwait ok3
+test_sigsuspend ok1
+test_sigsuspend ok2
+test_sigsuspend ok3
