@@ -1,5 +1,6 @@
 use core::{mem, time::Duration};
 
+use alloc::sync::Arc;
 use arceos_posix_api::ctypes::timespec;
 use axerrno::{LinuxError, LinuxResult};
 use axprocess::{Pid, Process, ProcessGroup, Thread};
@@ -70,6 +71,10 @@ fn check_sigset_size(size: usize) -> LinuxResult<()> {
     Ok(())
 }
 
+fn parse_signo(signo: u32) -> LinuxResult<Signo> {
+    Signo::from_repr(signo as u8).ok_or(LinuxError::EINVAL)
+}
+
 pub fn sys_rt_sigprocmask(
     how: i32,
     set: UserConstPtr<SignalSet>,
@@ -103,14 +108,14 @@ pub fn sys_rt_sigprocmask(
 }
 
 pub fn sys_rt_sigaction(
-    signo: i32,
+    signo: u32,
     act: UserConstPtr<kernel_sigaction>,
     oldact: UserPtr<kernel_sigaction>,
     sigsetsize: usize,
 ) -> LinuxResult<isize> {
     check_sigset_size(sigsetsize)?;
 
-    let signo = Signo::from_repr(signo as u8).ok_or(LinuxError::EINVAL)?;
+    let signo = parse_signo(signo)?;
     if matches!(signo, Signo::SIGKILL | Signo::SIGSTOP) {
         return Err(LinuxError::EINVAL);
     }
@@ -167,12 +172,12 @@ fn make_siginfo(signo: u32, code: u32) -> LinuxResult<Option<SignalInfo>> {
     if signo == 0 {
         return Ok(None);
     }
-    let signo = Signo::from_repr(signo as u8).ok_or(LinuxError::EINVAL)?;
+    let signo = parse_signo(signo)?;
     Ok(Some(SignalInfo::new(signo, code)))
 }
 
-pub fn sys_kill(pid: i32, sig: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(sig, SI_USER)? else {
+pub fn sys_kill(pid: i32, signo: u32) -> LinuxResult<isize> {
+    let Some(sig) = make_siginfo(signo, SI_USER)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
@@ -208,8 +213,8 @@ pub fn sys_kill(pid: i32, sig: u32) -> LinuxResult<isize> {
     Ok(result as isize)
 }
 
-pub fn sys_tkill(tid: Pid, sig: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(sig, SI_TKILL as u32)? else {
+pub fn sys_tkill(tid: Pid, signo: u32) -> LinuxResult<isize> {
+    let Some(sig) = make_siginfo(signo, SI_TKILL as u32)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
@@ -219,17 +224,62 @@ pub fn sys_tkill(tid: Pid, sig: u32) -> LinuxResult<isize> {
     Ok(0)
 }
 
-pub fn sys_tgkill(tgid: Pid, tid: Pid, sig: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(sig, SI_TKILL as u32)? else {
+pub fn sys_tgkill(tgid: Pid, tid: Pid, signo: u32) -> LinuxResult<isize> {
+    let Some(sig) = make_siginfo(signo, SI_TKILL as u32)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
 
+    send_signal_thread(get_thread_checked(tgid, tid)?.as_ref(), sig)?;
+    Ok(0)
+}
+
+fn get_thread_checked(tgid: Pid, tid: Pid) -> LinuxResult<Arc<Thread>> {
     let thr = get_thread(tid)?;
     if thr.process().pid() != tgid {
         return Err(LinuxError::ESRCH);
     }
-    send_signal_thread(&thr, sig)?;
+    Ok(thr)
+}
+
+fn make_queue_signal_info(
+    tgid: Pid,
+    signo: u32,
+    sig: UserConstPtr<SignalInfo>,
+) -> LinuxResult<SignalInfo> {
+    let signo = parse_signo(signo)?;
+    let mut sig = unsafe { sig.get()?.read() };
+    sig.set_signo(signo);
+    if sig.code() != SI_USER && current().task_ext().thread.process().pid() != tgid {
+        return Err(LinuxError::EPERM);
+    }
+    Ok(sig)
+}
+
+pub fn sys_rt_sigqueueinfo(
+    tgid: Pid,
+    signo: u32,
+    sig: UserConstPtr<SignalInfo>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let sig = make_queue_signal_info(tgid, signo, sig)?;
+    send_signal_process(get_process(tgid)?.as_ref(), sig)?;
+    Ok(0)
+}
+
+pub fn sys_rt_tgsigqueueinfo(
+    tgid: Pid,
+    tid: Pid,
+    signo: u32,
+    sig: UserConstPtr<SignalInfo>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let sig = make_queue_signal_info(tgid, signo, sig)?;
+    send_signal_thread(get_thread_checked(tgid, tid)?.as_ref(), sig)?;
     Ok(0)
 }
 
@@ -262,7 +312,7 @@ pub fn sys_rt_sigtimedwait(
     };
 
     if let Some(info) = info.nullable(UserPtr::get)? {
-        sig.to_ctype(unsafe { &mut *info });
+        unsafe { *info = sig.0 };
     }
 
     Ok(0)
