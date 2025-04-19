@@ -8,7 +8,7 @@ use starry_core::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_ke
 use syscalls::Sysno;
 
 #[register_trap_handler(SYSCALL)]
-fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
+fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
     let sysno = Sysno::from(syscall_num as u32);
     info!("Syscall {}", sysno);
     time_stat_from_user_to_kernel();
@@ -123,6 +123,32 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             tf.arg2().into(),
             tf.arg3() as _,
         ),
+        Sysno::rt_sigpending => sys_rt_sigpending(tf.arg0().into(), tf.arg1() as _),
+        Sysno::rt_sigreturn => sys_rt_sigreturn(tf),
+        Sysno::rt_sigtimedwait => sys_rt_sigtimedwait(
+            tf.arg0().into(),
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3() as _,
+        ),
+        Sysno::rt_sigsuspend => sys_rt_sigsuspend(tf, tf.arg0().into(), tf.arg1() as _),
+        Sysno::kill => sys_kill(tf.arg0() as _, tf.arg1() as _),
+        Sysno::tkill => sys_tkill(tf.arg0() as _, tf.arg1() as _),
+        Sysno::tgkill => sys_tgkill(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
+        Sysno::rt_sigqueueinfo => sys_rt_sigqueueinfo(
+            tf.arg0() as _,
+            tf.arg1() as _,
+            tf.arg2().into(),
+            tf.arg3() as _,
+        ),
+        Sysno::rt_tgsigqueueinfo => sys_rt_tgsigqueueinfo(
+            tf.arg0() as _,
+            tf.arg1() as _,
+            tf.arg2() as _,
+            tf.arg3().into(),
+            tf.arg4() as _,
+        ),
+        Sysno::sigaltstack => sys_sigaltstack(tf.arg0().into(), tf.arg1().into()),
         _ => {
             warn!("Unimplemented syscall: {}", sysno);
             Err(LinuxError::ENOSYS)

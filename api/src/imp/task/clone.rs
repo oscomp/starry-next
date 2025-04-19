@@ -4,6 +4,7 @@ use axerrno::{LinuxError, LinuxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
 use axhal::arch::{TrapFrame, UspaceContext};
 use axprocess::Pid;
+use axsignal::Signo;
 use axsync::Mutex;
 use axtask::{TaskExtRef, current};
 use bitflags::bitflags;
@@ -82,12 +83,14 @@ bitflags! {
     }
 }
 
+// TODO: CLEAR_SIGHAND in clone3
+
 #[apply(syscall_instrument)]
 pub fn sys_clone(
     flags: u32,
     stack: usize,
-    parent_tid: usize,
-    child_tid: usize,
+    ptid: usize,
+    ctid: usize,
     tls: usize,
 ) -> LinuxResult<isize> {
     const FLAG_MASK: u32 = 0xff;
@@ -96,12 +99,16 @@ pub fn sys_clone(
 
     info!(
         "sys_clone <= flags: {:?}, exit_signal: {}, stack: {:#x}, ptid: {:#x}, ctid: {:#x}, tls: {:#x}",
-        flags, exit_signal, stack, parent_tid, child_tid, tls
+        flags, exit_signal, stack, ptid, ctid, tls
     );
 
+    if exit_signal != 0 && flags.contains(CloneFlags::THREAD | CloneFlags::PARENT) {
+        return Err(LinuxError::EINVAL);
+    }
     if flags.contains(CloneFlags::THREAD) && !flags.contains(CloneFlags::VM | CloneFlags::SIGHAND) {
         return Err(LinuxError::EINVAL);
     }
+    let exit_signal = Signo::from_repr(exit_signal as u8);
 
     let curr = current();
 
@@ -110,55 +117,52 @@ pub fn sys_clone(
     if stack != 0 {
         new_uctx.set_sp(stack);
     }
-    // Skip current instruction
-    // FIXME: we should do this in arceos before calling `handle_syscall`.
-    // See: https://github.com/oscomp/arceos/commit/13ff3f58bd825c37ea5eef3393a4f8c0bb5b4f41
-    #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-    {
-        let new_uctx_ip = new_uctx.ip();
-        new_uctx.set_ip(new_uctx_ip + 4);
-    }
-    if flags.contains(CloneFlags::SETTLS) {
-        warn!("sys_clone: CLONE_SETTLS is not supported yet");
-    }
     new_uctx.set_retval(0);
 
     let set_child_tid = if flags.contains(CloneFlags::CHILD_SETTID) {
-        unsafe { UserPtr::<u32>::from(child_tid).get()?.as_mut() }
+        unsafe { UserPtr::<u32>::from(ctid).get()?.as_mut() }
     } else {
         None
     };
+    if flags.contains(CloneFlags::SETTLS) {
+        let _ = new_uctx.try_set_tls(tls);
+    }
     let mut new_task = new_user_task(curr.name(), new_uctx, set_child_tid);
 
-    // FIXME: remove this when we fix the tls issue
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    new_task
-        .ctx_mut()
-        .set_tls(axhal::arch::read_thread_pointer().into());
+    if flags.contains(CloneFlags::SETTLS) {
+        new_task.ctx_mut().set_tls(tls.into());
+    } else {
+        new_task
+            .ctx_mut()
+            .set_tls(axhal::arch::read_thread_pointer().into());
+    }
 
     let tid = new_task.id().as_u64() as Pid;
     if flags.contains(CloneFlags::PARENT_SETTID) {
-        unsafe { UserPtr::<Pid>::from(parent_tid).get()?.write(tid) };
+        unsafe { UserPtr::<Pid>::from(ctid).get()?.write(tid) };
     }
 
     let process = if flags.contains(CloneFlags::THREAD) {
-        new_task
-            .ctx_mut()
-            .set_page_table_root(axhal::arch::read_page_table_root());
+        new_task.ctx_mut().set_page_table_root(
+            curr.task_ext()
+                .process_data()
+                .aspace
+                .lock()
+                .page_table_root(),
+        );
 
         curr.task_ext().thread.process()
     } else {
-        // create a new process
-        let builder = if flags.contains(CloneFlags::PARENT) {
+        let parent = if flags.contains(CloneFlags::PARENT) {
             curr.task_ext()
                 .thread
                 .process()
                 .parent()
                 .ok_or(LinuxError::EINVAL)?
-                .fork(tid)
         } else {
-            curr.task_ext().thread.process().fork(tid)
+            curr.task_ext().thread.process().clone()
         };
+        let builder = parent.fork(tid);
 
         let aspace = if flags.contains(CloneFlags::VM) {
             curr.task_ext().process_data().aspace.clone()
@@ -172,9 +176,18 @@ pub fn sys_clone(
             .ctx_mut()
             .set_page_table_root(aspace.lock().page_table_root());
 
+        let signal_actions = if flags.contains(CloneFlags::SIGHAND) {
+            parent
+                .data::<ProcessData>()
+                .map_or_else(Arc::default, |it| it.signal.actions.clone())
+        } else {
+            Arc::default()
+        };
         let process_data = ProcessData::new(
             curr.task_ext().process_data().exe_path.read().clone(),
             aspace,
+            signal_actions,
+            exit_signal,
         );
 
         if flags.contains(CloneFlags::FILES) {
@@ -205,9 +218,9 @@ pub fn sys_clone(
         &builder.data(process_data).build()
     };
 
-    let thread_data = ThreadData::new();
+    let thread_data = ThreadData::new(process.data().unwrap());
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
-        thread_data.set_clear_child_tid(child_tid);
+        thread_data.set_clear_child_tid(ctid);
     }
 
     let thread = process.new_thread(tid).data(thread_data).build();
