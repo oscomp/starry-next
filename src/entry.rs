@@ -31,8 +31,12 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let mut task = new_user_task(name, uctx, None);
     task.ctx_mut().set_page_table_root(uspace.page_table_root());
 
-    let process_data =
-        ProcessData::new(exe_path, Arc::new(Mutex::new(uspace)), Some(Signo::SIGCHLD));
+    let process_data = ProcessData::new(
+        exe_path,
+        Arc::new(Mutex::new(uspace)),
+        Arc::default(),
+        Some(Signo::SIGCHLD),
+    );
 
     FD_TABLE
         .deref_from(&process_data.ns)

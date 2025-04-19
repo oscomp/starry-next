@@ -20,7 +20,7 @@ use axns::{AxNamespace, AxNamespaceIf};
 use axprocess::{Pid, Process, ProcessGroup, Session, Thread};
 use axsignal::{
     Signo,
-    api::{ProcessSignalManager, ThreadSignalManager},
+    api::{ProcessSignalManager, SignalActions, ThreadSignalManager},
 };
 use axsync::{Mutex, RawMutex};
 use axtask::{TaskExtRef, TaskInner, WaitQueue, current};
@@ -196,7 +196,12 @@ pub struct ProcessData {
 }
 
 impl ProcessData {
-    pub fn new(exe_path: String, aspace: Arc<Mutex<AddrSpace>>, exit_signal: Option<Signo>) -> Self {
+    pub fn new(
+        exe_path: String,
+        aspace: Arc<Mutex<AddrSpace>>,
+        signal_actions: Arc<Mutex<SignalActions>>,
+        exit_signal: Option<Signo>,
+    ) -> Self {
         Self {
             exe_path: RwLock::new(exe_path),
             aspace,
@@ -207,7 +212,10 @@ impl ProcessData {
             child_exit_wq: WaitQueue::new(),
             exit_signal,
 
-            signal: Arc::new(ProcessSignalManager::new(axconfig::plat::SIGNAL_TRAMPOLINE)),
+            signal: Arc::new(ProcessSignalManager::new(
+                signal_actions,
+                axconfig::plat::SIGNAL_TRAMPOLINE,
+            )),
         }
     }
 

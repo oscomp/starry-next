@@ -83,6 +83,8 @@ bitflags! {
     }
 }
 
+// TODO: CLEAR_SIGHAND in clone3
+
 #[apply(syscall_instrument)]
 pub fn sys_clone(
     flags: u32,
@@ -151,17 +153,16 @@ pub fn sys_clone(
 
         curr.task_ext().thread.process()
     } else {
-        // create a new process
-        let builder = if flags.contains(CloneFlags::PARENT) {
+        let parent = if flags.contains(CloneFlags::PARENT) {
             curr.task_ext()
                 .thread
                 .process()
                 .parent()
                 .ok_or(LinuxError::EINVAL)?
-                .fork(tid)
         } else {
-            curr.task_ext().thread.process().fork(tid)
+            curr.task_ext().thread.process().clone()
         };
+        let builder = parent.fork(tid);
 
         let aspace = if flags.contains(CloneFlags::VM) {
             curr.task_ext().process_data().aspace.clone()
@@ -175,9 +176,17 @@ pub fn sys_clone(
             .ctx_mut()
             .set_page_table_root(aspace.lock().page_table_root());
 
+        let signal_actions = if flags.contains(CloneFlags::SIGHAND) {
+            parent
+                .data::<ProcessData>()
+                .map_or_else(Arc::default, |it| it.signal.actions.clone())
+        } else {
+            Arc::default()
+        };
         let process_data = ProcessData::new(
             curr.task_ext().process_data().exe_path.read().clone(),
             aspace,
+            signal_actions,
             exit_signal,
         );
 

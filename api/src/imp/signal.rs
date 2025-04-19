@@ -116,19 +116,13 @@ pub fn sys_rt_sigaction(
     }
 
     let curr = current();
-    curr.task_ext()
-        .process_data()
-        .signal
-        .with_action_mut::<LinuxResult<_>>(signo, |action| {
-            if let Some(oldact) = oldact.nullable(UserPtr::get)? {
-                action.to_ctype(unsafe { &mut *oldact });
-            }
-            if let Some(act) = act.nullable(UserConstPtr::get)? {
-                *action = unsafe { (*act).try_into()? };
-            }
-            Ok(())
-        })?;
-
+    let mut actions = curr.task_ext().process_data().signal.actions.lock();
+    if let Some(oldact) = oldact.nullable(UserPtr::get)? {
+        actions[signo].to_ctype(unsafe { &mut *oldact });
+    }
+    if let Some(act) = act.nullable(UserConstPtr::get)? {
+        actions[signo] = unsafe { (*act).try_into()? };
+    }
     Ok(0)
 }
 
