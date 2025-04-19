@@ -1466,6 +1466,7 @@ dependencies = [
  "axhal",
  "axlog",
  "axprocess",
+ "axsignal",
  "axsync",
  "axtask",
  "linkme",

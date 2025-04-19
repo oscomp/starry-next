@@ -78,6 +78,7 @@ axtask.workspace = true
 arceos_posix_api.workspace = true
 
 axprocess.workspace = true
+axsignal.workspace = true
 
 axerrno.workspace = true
 linkme.workspace = true

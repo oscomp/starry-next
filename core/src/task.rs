@@ -18,7 +18,10 @@ use axhal::{
 use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
 use axprocess::{Pid, Process, ProcessGroup, Session, Thread};
-use axsignal::api::{ProcessSignalManager, ThreadSignalManager};
+use axsignal::{
+    Signo,
+    api::{ProcessSignalManager, ThreadSignalManager},
+};
 use axsync::{Mutex, RawMutex};
 use axtask::{TaskExtRef, TaskInner, WaitQueue, current};
 use memory_addr::VirtAddrRange;
@@ -183,18 +186,26 @@ pub struct ProcessData {
     /// The user heap top
     heap_top: AtomicUsize,
 
+    /// The child exit wait queue
+    pub child_exit_wq: WaitQueue,
+    /// The exit signal of the thread
+    pub exit_signal: Option<Signo>,
+
     /// The process signal manager
     pub signal: Arc<ProcessSignalManager<RawMutex, WaitQueueWrapper>>,
 }
 
 impl ProcessData {
-    pub fn new(exe_path: String, aspace: Arc<Mutex<AddrSpace>>) -> Self {
+    pub fn new(exe_path: String, aspace: Arc<Mutex<AddrSpace>>, exit_signal: Option<Signo>) -> Self {
         Self {
             exe_path: RwLock::new(exe_path),
             aspace,
             ns: AxNamespace::new_thread_local(),
             heap_bottom: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
             heap_top: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
+
+            child_exit_wq: WaitQueue::new(),
+            exit_signal,
 
             signal: Arc::new(ProcessSignalManager::new(axconfig::plat::SIGNAL_TRAMPOLINE)),
         }
@@ -214,6 +225,12 @@ impl ProcessData {
 
     pub fn set_heap_top(&self, top: usize) {
         self.heap_top.store(top, Ordering::Release)
+    }
+
+    /// Linux manual: A "clone" child is one which delivers no signal, or a
+    /// signal other than SIGCHLD to its parent upon termination.
+    pub fn is_clone_child(&self) -> bool {
+        self.exit_signal != Some(Signo::SIGCHLD)
     }
 }
 

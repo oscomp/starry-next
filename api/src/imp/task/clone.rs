@@ -4,6 +4,7 @@ use axerrno::{LinuxError, LinuxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
 use axhal::arch::{TrapFrame, UspaceContext};
 use axprocess::Pid;
+use axsignal::Signo;
 use axsync::Mutex;
 use axtask::{TaskExtRef, current};
 use bitflags::bitflags;
@@ -99,9 +100,13 @@ pub fn sys_clone(
         flags, exit_signal, stack, ptid, ctid, tls
     );
 
+    if exit_signal != 0 && flags.contains(CloneFlags::THREAD | CloneFlags::PARENT) {
+        return Err(LinuxError::EINVAL);
+    }
     if flags.contains(CloneFlags::THREAD) && !flags.contains(CloneFlags::VM | CloneFlags::SIGHAND) {
         return Err(LinuxError::EINVAL);
     }
+    let exit_signal = Signo::from_repr(exit_signal as u8);
 
     let curr = current();
 
@@ -173,6 +178,7 @@ pub fn sys_clone(
         let process_data = ProcessData::new(
             curr.task_ext().process_data().exe_path.read().clone(),
             aspace,
+            exit_signal,
         );
 
         if flags.contains(CloneFlags::FILES) {
