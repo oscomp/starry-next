@@ -133,6 +133,8 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::rt_sigsuspend => sys_rt_sigsuspend(tf, tf.arg0().into(), tf.arg1() as _),
         Sysno::kill => sys_kill(tf.arg0() as _, tf.arg1() as _),
+        Sysno::tkill => sys_tkill(tf.arg0() as _, tf.arg1() as _),
+        Sysno::tgkill => sys_tgkill(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         _ => {
             warn!("Unimplemented syscall: {}", sysno);
             Err(LinuxError::ENOSYS)

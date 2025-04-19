@@ -4,9 +4,9 @@ use arceos_posix_api::ctypes::timespec;
 use axerrno::{LinuxError, LinuxResult};
 use axprocess::{Pid, Process, ProcessGroup, Thread};
 use linux_raw_sys::general::{
-    SI_USER, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, kernel_sigaction, siginfo,
+    kernel_sigaction, siginfo, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SI_TKILL, SI_USER
 };
-use starry_core::task::{ProcessData, ThreadData, get_process, get_process_group, processes};
+use starry_core::task::{get_process, get_process_group, get_thread, processes, ProcessData, ThreadData};
 
 use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 
@@ -138,23 +138,21 @@ pub fn sys_rt_sigpending(set: UserPtr<SignalSet>, sigsetsize: usize) -> LinuxRes
     Ok(0)
 }
 
-pub fn send_signal_thread(thr: &Thread, sig: SignalInfo) -> bool {
+pub fn send_signal_thread(thr: &Thread, sig: SignalInfo) -> LinuxResult<()> {
     info!("Send signal {:?} to thread {}", sig.signo(), thr.tid());
-    if let Some(thr) = thr.data::<ThreadData>() {
-        thr.signal.send_signal(sig);
-        true
-    } else {
-        false
-    }
+    let Some(thr) = thr.data::<ThreadData>() else {
+        return Err(LinuxError::EPERM);
+    };
+    thr.signal.send_signal(sig);
+    Ok(())
 }
-pub fn send_signal_process(proc: &Process, sig: SignalInfo) -> bool {
+pub fn send_signal_process(proc: &Process, sig: SignalInfo) -> LinuxResult<()> {
     info!("Send signal {:?} to process {}", sig.signo(), proc.pid());
-    if let Some(proc) = proc.data::<ProcessData>() {
-        proc.signal.send_signal(sig);
-        true
-    } else {
-        false
-    }
+    let Some(proc) = proc.data::<ProcessData>() else {
+        return Err(LinuxError::EPERM);
+    };
+    proc.signal.send_signal(sig);
+    Ok(())
 }
 pub fn send_signal_process_group(pg: &ProcessGroup, sig: SignalInfo) -> usize {
     info!(
@@ -164,7 +162,7 @@ pub fn send_signal_process_group(pg: &ProcessGroup, sig: SignalInfo) -> usize {
     );
     let mut count = 0;
     for proc in pg.processes() {
-        count += send_signal_process(&proc, sig.clone()) as usize;
+        count += send_signal_process(&proc, sig.clone()).is_ok() as usize;
     }
     count
 }
@@ -188,7 +186,7 @@ pub fn sys_kill(pid: i32, sig: u32) -> LinuxResult<isize> {
     match pid {
         1.. => {
             let proc = get_process(pid as Pid)?;
-            send_signal_process(&proc, sig);
+            send_signal_process(&proc, sig)?;
             result += 1;
         }
         0 => {
@@ -201,7 +199,7 @@ pub fn sys_kill(pid: i32, sig: u32) -> LinuxResult<isize> {
                     // init process
                     continue;
                 }
-                send_signal_process(&proc, sig.clone());
+                send_signal_process(&proc, sig.clone())?;
                 result += 1;
             }
         }
@@ -212,6 +210,31 @@ pub fn sys_kill(pid: i32, sig: u32) -> LinuxResult<isize> {
     }
 
     Ok(result as isize)
+}
+
+pub fn sys_tkill(tid: Pid, sig: u32) -> LinuxResult<isize> {
+    let Some(sig) = make_siginfo(sig, SI_TKILL as u32)? else {
+        // TODO: should also check permissions
+        return Ok(0);
+    };
+
+    let thr = get_thread(tid)?;
+    send_signal_thread(&thr, sig)?;
+    Ok(0)
+}
+
+pub fn sys_tgkill(tgid: Pid, tid: Pid, sig: u32) -> LinuxResult<isize> {
+    let Some(sig) = make_siginfo(sig, SI_TKILL as u32)? else {
+        // TODO: should also check permissions
+        return Ok(0);
+    };
+
+    let thr = get_thread(tid)?;
+    if thr.process().pid() != tgid {
+        return Err(LinuxError::ESRCH);
+    }
+    send_signal_thread(&thr, sig)?;
+    Ok(0)
 }
 
 pub fn sys_rt_sigreturn(tf: &mut TrapFrame) -> LinuxResult<isize> {
