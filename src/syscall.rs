@@ -125,6 +125,13 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::rt_sigpending => sys_rt_sigpending(tf.arg0().into(), tf.arg1() as _),
         Sysno::rt_sigreturn => sys_rt_sigreturn(tf),
+        Sysno::rt_sigtimedwait => sys_rt_sigtimedwait(
+            tf.arg0().into(),
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3() as _,
+        ),
+        Sysno::rt_sigsuspend => sys_rt_sigsuspend(tf, tf.arg0().into(), tf.arg1() as _),
         Sysno::kill => sys_kill(tf.arg0() as _, tf.arg1() as _),
         _ => {
             warn!("Unimplemented syscall: {}", sysno);

@@ -1,6 +1,11 @@
+use core::{mem, time::Duration};
+
+use arceos_posix_api::ctypes::timespec;
 use axerrno::{LinuxError, LinuxResult};
 use axprocess::{Pid, Process, ProcessGroup, Thread};
-use linux_raw_sys::general::{SI_USER, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, kernel_sigaction};
+use linux_raw_sys::general::{
+    SI_USER, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, kernel_sigaction, siginfo,
+};
 use starry_core::task::{ProcessData, ThreadData, get_process, get_process_group, processes};
 
 use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
@@ -14,16 +19,14 @@ use axtask::{TaskExtRef, current};
 
 use super::do_exit;
 
-#[register_trap_handler(POST_TRAP)]
-fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
-    if !from_user {
-        return;
-    }
-
-    let curr = current();
-    let Some((sig, os_action)) = curr.task_ext().thread_data().signal.check_signals(tf, None)
+fn check_signals(tf: &mut TrapFrame, restore_blocked: Option<SignalSet>) -> bool {
+    let Some((sig, os_action)) = current()
+        .task_ext()
+        .thread_data()
+        .signal
+        .check_signals(tf, restore_blocked)
     else {
-        return;
+        return false;
     };
 
     let signo = sig.signo();
@@ -46,6 +49,16 @@ fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
             // do nothing
         }
     }
+    true
+}
+
+#[register_trap_handler(POST_TRAP)]
+fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
+    if !from_user {
+        return;
+    }
+
+    check_signals(tf, None);
 }
 
 fn check_sigset_size(size: usize) -> LinuxResult<()> {
@@ -119,9 +132,8 @@ pub fn sys_rt_sigaction(
 
 pub fn sys_rt_sigpending(set: UserPtr<SignalSet>, sigsetsize: usize) -> LinuxResult<isize> {
     check_sigset_size(sigsetsize)?;
-    let set = set.get()?;
     unsafe {
-        *set = current().task_ext().thread_data().signal.pending();
+        *set.get()? = current().task_ext().thread_data().signal.pending();
     }
     Ok(0)
 }
@@ -206,4 +218,63 @@ pub fn sys_rt_sigreturn(tf: &mut TrapFrame) -> LinuxResult<isize> {
     let curr = current();
     curr.task_ext().thread_data().signal.restore(tf);
     Ok(tf.retval() as isize)
+}
+
+pub fn sys_rt_sigtimedwait(
+    set: UserConstPtr<SignalSet>,
+    info: UserPtr<siginfo>,
+    timeout: UserConstPtr<timespec>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let set = unsafe { *set.get()? };
+    let timeout: Option<Duration> = timeout
+        .nullable(UserConstPtr::get)?
+        .map(|ts| unsafe { *ts }.into());
+
+    let Some(sig) = current()
+        .task_ext()
+        .thread_data()
+        .signal
+        .wait_timeout(set, timeout)
+    else {
+        return Err(LinuxError::EAGAIN);
+    };
+
+    if let Some(info) = info.nullable(UserPtr::get)? {
+        sig.to_ctype(unsafe { &mut *info });
+    }
+
+    Ok(0)
+}
+
+pub fn sys_rt_sigsuspend(
+    tf: &mut TrapFrame,
+    set: UserPtr<SignalSet>,
+    sigsetsize: usize,
+) -> LinuxResult<isize> {
+    check_sigset_size(sigsetsize)?;
+
+    let curr = current();
+    let thr_data = curr.task_ext().thread_data();
+    let mut set = unsafe { *set.get()? };
+
+    set.remove(Signo::SIGKILL);
+    set.remove(Signo::SIGSTOP);
+
+    let old_blocked = thr_data
+        .signal
+        .with_blocked_mut(|blocked| mem::replace(blocked, set));
+
+    tf.set_retval((-LinuxError::EINTR.code() as isize) as usize);
+
+    loop {
+        if check_signals(tf, Some(old_blocked)) {
+            break;
+        }
+        curr.task_ext().process_data().signal.wait_signal();
+    }
+
+    Ok(0)
 }
