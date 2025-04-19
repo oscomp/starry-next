@@ -4,9 +4,11 @@ use arceos_posix_api::ctypes::timespec;
 use axerrno::{LinuxError, LinuxResult};
 use axprocess::{Pid, Process, ProcessGroup, Thread};
 use linux_raw_sys::general::{
-    kernel_sigaction, siginfo, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SI_TKILL, SI_USER
+    MINSIGSTKSZ, SI_TKILL, SI_USER, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, kernel_sigaction, siginfo,
 };
-use starry_core::task::{get_process, get_process_group, get_thread, processes, ProcessData, ThreadData};
+use starry_core::task::{
+    ProcessData, ThreadData, get_process, get_process_group, get_thread, processes,
+};
 
 use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 
@@ -14,7 +16,7 @@ use axhal::{
     arch::TrapFrame,
     trap::{POST_TRAP, register_trap_handler},
 };
-use axsignal::{SignalInfo, SignalOSAction, SignalSet, Signo};
+use axsignal::{SignalInfo, SignalOSAction, SignalSet, SignalStack, Signo};
 use axtask::{TaskExtRef, current};
 
 use super::do_exit;
@@ -300,4 +302,30 @@ pub fn sys_rt_sigsuspend(
     }
 
     Ok(0)
+}
+
+pub fn sys_sigaltstack(
+    ss: UserConstPtr<SignalStack>,
+    old_ss: UserPtr<SignalStack>,
+) -> LinuxResult<isize> {
+    current()
+        .task_ext()
+        .thread_data()
+        .signal
+        .with_stack_mut(|stack| {
+            if let Some(old_ss) = old_ss.nullable(UserPtr::get)? {
+                unsafe { *old_ss = stack.clone() };
+            }
+            if let Some(ss) = ss.nullable(UserConstPtr::get)? {
+                let ss = unsafe { ss.read() };
+                if ss.size <= MINSIGSTKSZ as usize {
+                    return Err(LinuxError::ENOMEM);
+                }
+                let stack_ptr: UserConstPtr<u8> = ss.sp.into();
+                let _ = stack_ptr.get_as_array(ss.size)?;
+
+                *stack = ss.clone();
+            }
+            Ok(0)
+        })
 }
