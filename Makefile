@@ -8,7 +8,7 @@ FEATURES ?= fp_simd
 export NO_AXSTD := y
 export AX_LIB := axfeat
 
-RUSTDOCFLAGS := -Z unstable-options --enable-index-page -D rustdoc::broken_intra_doc_links
+RUSTDOCFLAGS := -Z unstable-options --enable-index-page -D rustdoc::broken_intra_doc_links -D missing-docs
 EXTRA_CONFIG ?= $(PWD)/configs/$(ARCH).toml
 ifneq ($(filter $(MAKECMDGOALS),doc),) # make doc
     export RUSTDOCFLAGS

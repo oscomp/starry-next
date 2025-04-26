@@ -2,7 +2,7 @@
 //! programs and managing processes.
 
 #![no_std]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use]
 extern crate axlog;
