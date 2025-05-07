@@ -329,22 +329,27 @@ pub fn add_thread_to_table(thread: &Arc<Thread>) {
     session_table.insert(session.sid(), &session);
 }
 
+/// Lists all processes.
 pub fn processes() -> Vec<Arc<Process>> {
     PROCESS_TABLE.read().values().collect()
 }
 
+/// Finds the thread with the given TID.
 pub fn get_thread(tid: Pid) -> LinuxResult<Arc<Thread>> {
     THREAD_TABLE.read().get(&tid).ok_or(LinuxError::ESRCH)
 }
+/// Finds the process with the given PID.
 pub fn get_process(pid: Pid) -> LinuxResult<Arc<Process>> {
     PROCESS_TABLE.read().get(&pid).ok_or(LinuxError::ESRCH)
 }
+/// Finds the process group with the given PGID.
 pub fn get_process_group(pgid: Pid) -> LinuxResult<Arc<ProcessGroup>> {
     PROCESS_GROUP_TABLE
         .read()
         .get(&pgid)
         .ok_or(LinuxError::ESRCH)
 }
+/// Finds the session with the given SID.
 pub fn get_session(sid: Pid) -> LinuxResult<Arc<Session>> {
     SESSION_TABLE.read().get(&sid).ok_or(LinuxError::ESRCH)
 }
