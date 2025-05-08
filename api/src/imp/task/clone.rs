@@ -83,10 +83,10 @@ pub fn sys_clone(
     tf: &TrapFrame,
     flags: u32,
     stack: usize,
-    ptid: usize,
-    #[cfg(any(target_arch = "x86_64", target_arch = "loongarch64"))] ctid: usize,
+    parent_tid: usize,
+    #[cfg(any(target_arch = "x86_64", target_arch = "loongarch64"))] child_tid: usize,
     tls: usize,
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "loongarch64")))] ctid: usize,
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "loongarch64")))] child_tid: usize,
 ) -> LinuxResult<isize> {
     const FLAG_MASK: u32 = 0xff;
     let exit_signal = flags & FLAG_MASK;
@@ -94,7 +94,7 @@ pub fn sys_clone(
 
     info!(
         "sys_clone <= flags: {:?}, exit_signal: {}, stack: {:#x}, ptid: {:#x}, ctid: {:#x}, tls: {:#x}",
-        flags, exit_signal, stack, ptid, ctid, tls
+        flags, exit_signal, stack, parent_tid, child_tid, tls
     );
 
     if exit_signal != 0 && flags.contains(CloneFlags::THREAD | CloneFlags::PARENT) {
@@ -115,7 +115,7 @@ pub fn sys_clone(
     new_uctx.set_retval(0);
 
     let set_child_tid = if flags.contains(CloneFlags::CHILD_SETTID) {
-        unsafe { UserPtr::<u32>::from(ctid).get()?.as_mut() }
+        unsafe { UserPtr::<u32>::from(child_tid).get()?.as_mut() }
     } else {
         None
     };
@@ -125,7 +125,7 @@ pub fn sys_clone(
 
     let tid = new_task.id().as_u64() as Pid;
     if flags.contains(CloneFlags::PARENT_SETTID) {
-        unsafe { UserPtr::<Pid>::from(ctid).get()?.write(tid) };
+        unsafe { UserPtr::<Pid>::from(parent_tid).get()?.write(tid) };
     }
 
     let process = if flags.contains(CloneFlags::THREAD) {
@@ -206,7 +206,7 @@ pub fn sys_clone(
 
     let thread_data = ThreadData::new(process.data().unwrap());
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
-        thread_data.set_clear_child_tid(ctid);
+        thread_data.set_clear_child_tid(child_tid);
     }
 
     let thread = process.new_thread(tid).data(thread_data).build();
