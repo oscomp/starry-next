@@ -183,34 +183,33 @@ pub fn sys_kill(pid: i32, signo: u32) -> LinuxResult<isize> {
     };
 
     let curr = current();
-    let mut result = 0usize;
     match pid {
         1.. => {
             let proc = get_process(pid as Pid)?;
             send_signal_process(&proc, sig)?;
-            result += 1;
+            Ok(1)
         }
         0 => {
             let pg = curr.task_ext().thread.process().group();
-            result += send_signal_process_group(&pg, sig);
+            Ok(send_signal_process_group(&pg, sig) as _)
         }
         -1 => {
+            let mut count = 0;
             for proc in processes() {
                 if proc.is_init() {
                     // init process
                     continue;
                 }
                 send_signal_process(&proc, sig.clone())?;
-                result += 1;
+                count += 1;
             }
+            Ok(count)
         }
         ..-1 => {
             let pg = get_process_group((-pid) as Pid)?;
-            result += send_signal_process_group(&pg, sig);
+            Ok(send_signal_process_group(&pg, sig) as _)
         }
     }
-
-    Ok(result as isize)
 }
 
 pub fn sys_tkill(tid: Pid, signo: u32) -> LinuxResult<isize> {
