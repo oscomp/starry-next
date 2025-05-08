@@ -337,7 +337,7 @@ pub fn sys_rt_sigsuspend(
         .signal
         .with_blocked_mut(|blocked| mem::replace(blocked, set));
 
-    tf.set_retval((-LinuxError::EINTR.code() as isize) as usize);
+    tf.set_retval(-LinuxError::EINTR.code() as usize);
 
     loop {
         if check_signals(tf, Some(old_blocked)) {
