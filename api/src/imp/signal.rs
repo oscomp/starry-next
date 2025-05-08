@@ -229,11 +229,11 @@ pub fn sys_tgkill(tgid: Pid, tid: Pid, signo: u32) -> LinuxResult<isize> {
         return Ok(0);
     };
 
-    send_signal_thread(get_thread_checked(tgid, tid)?.as_ref(), sig)?;
+    send_signal_thread(find_thread_in_group(tgid, tid)?.as_ref(), sig)?;
     Ok(0)
 }
 
-fn get_thread_checked(tgid: Pid, tid: Pid) -> LinuxResult<Arc<Thread>> {
+fn find_thread_in_group(tgid: Pid, tid: Pid) -> LinuxResult<Arc<Thread>> {
     let thr = get_thread(tid)?;
     if thr.process().pid() != tgid {
         return Err(LinuxError::ESRCH);
@@ -278,7 +278,7 @@ pub fn sys_rt_tgsigqueueinfo(
     check_sigset_size(sigsetsize)?;
 
     let sig = make_queue_signal_info(tgid, signo, sig)?;
-    send_signal_thread(get_thread_checked(tgid, tid)?.as_ref(), sig)?;
+    send_signal_thread(find_thread_in_group(tgid, tid)?.as_ref(), sig)?;
     Ok(0)
 }
 
