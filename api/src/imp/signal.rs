@@ -168,7 +168,7 @@ pub fn send_signal_process_group(pg: &ProcessGroup, sig: SignalInfo) -> usize {
     count
 }
 
-fn make_siginfo(signo: u32, code: u32) -> LinuxResult<Option<SignalInfo>> {
+fn make_siginfo(signo: u32, code: i32) -> LinuxResult<Option<SignalInfo>> {
     if signo == 0 {
         return Ok(None);
     }
@@ -177,7 +177,7 @@ fn make_siginfo(signo: u32, code: u32) -> LinuxResult<Option<SignalInfo>> {
 }
 
 pub fn sys_kill(pid: i32, signo: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(signo, SI_USER)? else {
+    let Some(sig) = make_siginfo(signo, SI_USER as _)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
@@ -213,7 +213,7 @@ pub fn sys_kill(pid: i32, signo: u32) -> LinuxResult<isize> {
 }
 
 pub fn sys_tkill(tid: Pid, signo: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(signo, SI_TKILL as u32)? else {
+    let Some(sig) = make_siginfo(signo, SI_TKILL)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
@@ -224,7 +224,7 @@ pub fn sys_tkill(tid: Pid, signo: u32) -> LinuxResult<isize> {
 }
 
 pub fn sys_tgkill(tgid: Pid, tid: Pid, signo: u32) -> LinuxResult<isize> {
-    let Some(sig) = make_siginfo(signo, SI_TKILL as u32)? else {
+    let Some(sig) = make_siginfo(signo, SI_TKILL)? else {
         // TODO: should also check permissions
         return Ok(0);
     };
@@ -249,7 +249,9 @@ fn make_queue_signal_info(
     let signo = parse_signo(signo)?;
     let mut sig = unsafe { sig.get()?.read() };
     sig.set_signo(signo);
-    if sig.code() != SI_USER && current().task_ext().thread.process().pid() != tgid {
+    if current().task_ext().thread.process().pid() != tgid
+        && (sig.code() >= 0 || sig.code() == SI_TKILL)
+    {
         return Err(LinuxError::EPERM);
     }
     Ok(sig)
