@@ -113,10 +113,7 @@ pub fn load_user_app(
     let file_data = axfs::api::read(args[0].as_str())?;
     if file_data.starts_with(b"#!") {
         let head = &file_data[2..file_data.len().min(256)];
-        let pos = head
-            .iter()
-            .position(|c| *c == b'\n')
-            .unwrap_or_else(|| head.len());
+        let pos = head.iter().position(|c| *c == b'\n').unwrap_or(head.len());
         let line = core::str::from_utf8(&head[..pos]).map_err(|_| AxError::InvalidData)?;
 
         let new_args: Vec<String> = line
