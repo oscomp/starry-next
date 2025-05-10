@@ -66,7 +66,7 @@ pub fn sys_arch_prctl(
     code: i32,
     addr: usize,
 ) -> LinuxResult<isize> {
-    use crate::ptr::{PtrWrapper, UserPtr};
+    use crate::ptr::UserPtr;
 
     let code = ArchPrctlCode::try_from(code).map_err(|_| axerrno::LinuxError::EINVAL)?;
     debug!("sys_arch_prctl: code = {:?}, addr = {:#x}", code, addr);
@@ -75,9 +75,7 @@ pub fn sys_arch_prctl(
         // According to Linux implementation, SetFs & SetGs does not return
         // error at all
         ArchPrctlCode::GetFs => {
-            unsafe {
-                *UserPtr::from(addr).get()? = tf.tls();
-            }
+            *UserPtr::from(addr).get_as_mut()? = tf.tls();
             Ok(0)
         }
         ArchPrctlCode::SetFs => {
@@ -85,9 +83,8 @@ pub fn sys_arch_prctl(
             Ok(0)
         }
         ArchPrctlCode::GetGs => {
-            unsafe {
-                *UserPtr::from(addr).get()? = x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE);
-            }
+            *UserPtr::from(addr).get_as_mut()? =
+                unsafe { x86::msr::rdmsr(x86::msr::IA32_KERNEL_GSBASE) };
             Ok(0)
         }
         ArchPrctlCode::SetGs => {

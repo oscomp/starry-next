@@ -10,7 +10,7 @@ use macro_rules_attribute::apply;
 use starry_core::task::ProcessData;
 
 use crate::{
-    ptr::{PtrWrapper, UserPtr},
+    ptr::{UserPtr, nullable},
     syscall_instrument,
 };
 
@@ -92,14 +92,14 @@ pub fn sys_waitpid(pid: i32, exit_code_ptr: UserPtr<i32>, options: u32) -> Linux
         return Err(LinuxError::ECHILD);
     }
 
-    let exit_code = exit_code_ptr.nullable(UserPtr::get)?;
+    let exit_code = nullable!(exit_code_ptr.get_as_mut())?;
     loop {
         if let Some(child) = children.iter().find(|child| child.is_zombie()) {
             if !options.contains(WaitOptions::WNOWAIT) {
                 child.free();
             }
             if let Some(exit_code) = exit_code {
-                unsafe { exit_code.write(child.exit_code()) };
+                *exit_code = child.exit_code();
             }
             return Ok(child.pid() as _);
         } else if options.contains(WaitOptions::WNOHANG) {

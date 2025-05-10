@@ -1,12 +1,14 @@
-use core::ffi::{c_char, c_void};
+use core::ffi::{c_char, c_int, c_void};
 
-use alloc::string::ToString;
-use arceos_posix_api::AT_FDCWD;
-use axerrno::{AxError, LinuxError, LinuxResult};
+use alloc::ffi::CString;
+use axerrno::{LinuxError, LinuxResult};
+use linux_raw_sys::general::{__kernel_ino_t, __kernel_off_t, AT_REMOVEDIR};
 use macro_rules_attribute::apply;
 
 use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
+    file::{Directory, FileLike},
+    path::{HARDLINK_MANAGER, handle_file_path},
+    ptr::{UserConstPtr, UserPtr, nullable},
     syscall_instrument,
 };
 
@@ -24,37 +26,38 @@ pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<is
     Ok(0)
 }
 
+#[apply(syscall_instrument)]
 pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    axfs::api::set_current_dir(path).map(|_| 0).map_err(|err| {
-        warn!("Failed to change directory: {err:?}");
-        err.into()
-    })
+    debug!("sys_chdir <= {:?}", path);
+
+    axfs::api::set_current_dir(path)?;
+    Ok(0)
 }
 
+#[apply(syscall_instrument)]
 pub fn sys_mkdirat(dirfd: i32, path: UserConstPtr<c_char>, mode: u32) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-
-    if !path.starts_with("/") && dirfd != AT_FDCWD as i32 {
-        warn!("unsupported.");
-        return Err(LinuxError::EINVAL);
-    }
+    debug!(
+        "sys_mkdirat <= dirfd: {}, path: {}, mode: {}",
+        dirfd, path, mode
+    );
 
     if mode != 0 {
-        info!("directory mode not supported.");
+        warn!("directory mode not supported.");
     }
 
-    axfs::api::create_dir(path).map(|_| 0).map_err(|err| {
-        warn!("Failed to create directory {path}: {err:?}");
-        err.into()
-    })
+    let path = handle_file_path(dirfd, path)?;
+    axfs::api::create_dir(path.as_str())?;
+
+    Ok(0)
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct DirEnt {
-    d_ino: u64,
-    d_off: i64,
+    d_ino: __kernel_ino_t,
+    d_off: __kernel_off_t,
     d_reclen: u16,
     d_type: u8,
     d_name: [u8; 0],
@@ -140,32 +143,37 @@ impl<'a> DirBuffer<'a> {
         self.offset += dirent.d_reclen as usize;
         Ok(())
     }
+
+    fn read_entry(&self, offset: usize) -> Option<&DirEnt> {
+        if offset + DirEnt::FIXED_SIZE > self.buf.len() {
+            return None;
+        }
+        let entry_ptr = unsafe { self.buf.as_ptr().add(offset) as *const DirEnt };
+        Some(unsafe { &*entry_ptr })
+    }
 }
 
-pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<isize> {
-    let buf = buf.get_as_bytes(len)?;
+#[apply(syscall_instrument)]
+pub fn sys_getdents64(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
+    let buf = buf.get_as_mut_slice(len)?;
+    debug!(
+        "sys_getdents64 <= fd: {}, buf: {:p}, len: {}",
+        fd,
+        buf.as_ptr(),
+        buf.len()
+    );
 
     if len < DirEnt::FIXED_SIZE {
         warn!("Buffer size too small: {len}");
         return Err(LinuxError::EINVAL);
     }
 
-    let path = match arceos_posix_api::Directory::from_fd(fd).map(|dir| dir.path().to_string()) {
-        Ok(path) => path,
-        Err(err) => {
-            warn!("Invalid directory descriptor: {:?}", err);
-            return Err(LinuxError::EBADF);
-        }
-    };
+    let mut buffer = DirBuffer::new(buf);
 
-    let mut buffer =
-        unsafe { DirBuffer::new(core::slice::from_raw_parts_mut(buf as *mut u8, len)) };
-
-    let (initial_offset, count) = unsafe {
+    let (initial_offset, count) = {
         let mut buf_offset = 0;
         let mut count = 0;
-        while buf_offset + DirEnt::FIXED_SIZE <= len {
-            let dir_ent = *(buf.add(buf_offset) as *const DirEnt);
+        while let Some(dir_ent) = buffer.read_entry(buf_offset) {
             if dir_ent.d_reclen == 0 {
                 break;
             }
@@ -177,41 +185,40 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<
         (buf_offset as i64, count)
     };
 
-    axfs::api::read_dir(&path)
-        .map(|entries| {
-            let mut total_size = initial_offset as usize;
-            let mut current_offset = initial_offset;
+    let dir = Directory::from_fd(fd)?;
+    let path = dir.path();
 
-            for entry in entries.flatten().skip(count) {
-                let mut name = entry.file_name();
-                name.push('\0');
-                let name_bytes = name.as_bytes();
+    let mut total_size = initial_offset as usize;
+    let mut current_offset = initial_offset;
 
-                let entry_size = DirEnt::FIXED_SIZE + name_bytes.len();
-                current_offset += entry_size as i64;
+    for entry in axfs::api::read_dir(path)?.flatten().skip(count) {
+        let mut name = entry.file_name();
+        name.push('\0');
+        let name_bytes = name.as_bytes();
 
-                let dirent = DirEnt::new(
-                    1,
-                    current_offset,
-                    entry_size,
-                    FileType::from(entry.file_type()),
-                );
+        let entry_size = DirEnt::FIXED_SIZE + name_bytes.len();
+        current_offset += entry_size as i64;
 
-                if buffer.write_entry(dirent, name_bytes).is_err() {
-                    break;
-                }
+        let dirent = DirEnt::new(
+            1,
+            current_offset,
+            entry_size,
+            FileType::from(entry.file_type()),
+        );
 
-                total_size += entry_size;
-            }
+        if buffer.write_entry(dirent, name_bytes).is_err() {
+            break;
+        }
 
-            if total_size > 0 && buffer.can_fit_entry(DirEnt::FIXED_SIZE) {
-                let terminal = DirEnt::new(1, current_offset, 0, FileType::Reg);
-                let _ = buffer.write_entry(terminal, &[]);
-            }
+        total_size += entry_size;
+    }
 
-            total_size as isize
-        })
-        .map_err(|err| err.into())
+    if total_size > 0 && buffer.can_fit_entry(DirEnt::FIXED_SIZE) {
+        let terminal = DirEnt::new(1, current_offset, 0, FileType::Reg);
+        let _ = buffer.write_entry(terminal, &[]);
+    }
+
+    Ok(total_size as isize)
 }
 
 /// create a link from new_path to old_path
@@ -219,41 +226,33 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<
 /// new_path: new file path
 /// flags: link flags
 /// return value: return 0 when success, else return -1.
+#[apply(syscall_instrument)]
 pub fn sys_linkat(
-    old_dirfd: i32,
+    old_dirfd: c_int,
     old_path: UserConstPtr<c_char>,
-    new_dirfd: i32,
+    new_dirfd: c_int,
     new_path: UserConstPtr<c_char>,
     flags: i32,
 ) -> LinuxResult<isize> {
-    let old_path = old_path.get_as_null_terminated()?;
-    let new_path = new_path.get_as_null_terminated()?;
+    let old_path = old_path.get_as_str()?;
+    let new_path = new_path.get_as_str()?;
+    debug!(
+        "sys_linkat <= old_dirfd: {}, old_path: {}, new_dirfd: {}, new_path: {}, flags: {}",
+        old_dirfd, old_path, new_dirfd, new_path, flags
+    );
 
     if flags != 0 {
         warn!("Unsupported flags: {flags}");
     }
 
     // handle old path
-    arceos_posix_api::handle_file_path(old_dirfd as isize, Some(old_path.as_ptr() as _), false)
-        .inspect_err(|err| warn!("Failed to convert new path: {err:?}"))
-        .and_then(|old_path| {
-            //handle new path
-            arceos_posix_api::handle_file_path(
-                new_dirfd as isize,
-                Some(new_path.as_ptr() as _),
-                false,
-            )
-            .inspect_err(|err| warn!("Failed to convert new path: {err:?}"))
-            .map(|new_path| (old_path, new_path))
-        })
-        .and_then(|(old_path, new_path)| {
-            arceos_posix_api::HARDLINK_MANAGER
-                .create_link(&new_path, &old_path)
-                .inspect_err(|err| warn!("Failed to create link: {err:?}"))
-                .map_err(Into::into)
-        })
-        .map(|_| 0)
-        .map_err(|err| err.into())
+    let old_path = handle_file_path(old_dirfd, old_path)?;
+    // handle new path
+    let new_path = handle_file_path(new_dirfd, new_path)?;
+
+    HARDLINK_MANAGER.create_link(&new_path, &old_path)?;
+
+    Ok(0)
 }
 
 /// remove link of specific file (can be used to delete file)
@@ -261,38 +260,47 @@ pub fn sys_linkat(
 /// path: the name of link to be removed
 /// flags: can be 0 or AT_REMOVEDIR
 /// return 0 when success, else return -1
-pub fn sys_unlinkat(dir_fd: isize, path: UserConstPtr<c_char>, flags: usize) -> LinuxResult<isize> {
-    let path = path.get_as_null_terminated()?;
+#[apply(syscall_instrument)]
+pub fn sys_unlinkat(dirfd: c_int, path: UserConstPtr<c_char>, flags: u32) -> LinuxResult<isize> {
+    let path = path.get_as_str()?;
+    debug!(
+        "sys_unlinkat <= dirfd: {}, path: {}, flags: {}",
+        dirfd, path, flags
+    );
 
-    const AT_REMOVEDIR: usize = 0x200;
+    let path = handle_file_path(dirfd, path)?;
 
-    arceos_posix_api::handle_file_path(dir_fd, Some(path.as_ptr() as _), false)
-        .inspect_err(|e| warn!("unlinkat error: {:?}", e))
-        .and_then(|path| {
-            if flags == AT_REMOVEDIR {
-                axfs::api::remove_dir(path.as_str())
-                    .inspect_err(|e| warn!("unlinkat error: {:?}", e))
-                    .map(|_| 0)
-            } else {
-                axfs::api::metadata(path.as_str()).and_then(|metadata| {
-                    if metadata.is_dir() {
-                        Err(AxError::IsADirectory)
-                    } else {
-                        debug!("unlink file: {:?}", path);
-                        arceos_posix_api::HARDLINK_MANAGER
-                            .remove_link(&path)
-                            .ok_or_else(|| {
-                                debug!("unlink file error");
-                                AxError::NotFound
-                            })
-                            .map(|_| 0)
-                    }
-                })
-            }
-        })
-        .map_err(|err| err.into())
+    if flags == AT_REMOVEDIR {
+        axfs::api::remove_dir(path.as_str())?;
+    } else {
+        let metadata = axfs::api::metadata(path.as_str())?;
+        if metadata.is_dir() {
+            return Err(LinuxError::EISDIR);
+        } else {
+            debug!("unlink file: {:?}", path);
+            HARDLINK_MANAGER
+                .remove_link(&path)
+                .ok_or(LinuxError::ENOENT)?;
+        }
+    }
+    Ok(0)
 }
 
-pub fn sys_getcwd(buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
-    Ok(arceos_posix_api::sys_getcwd(buf.get_as_null_terminated()?.as_ptr() as _, size) as _)
+#[apply(syscall_instrument)]
+pub fn sys_getcwd(buf: UserPtr<u8>, size: usize) -> LinuxResult<isize> {
+    let buf = nullable!(buf.get_as_mut_slice(size))?;
+
+    let Some(buf) = buf else {
+        return Ok(0);
+    };
+
+    let cwd = CString::new(axfs::api::current_dir()?).map_err(|_| LinuxError::EINVAL)?;
+    let cwd = cwd.as_bytes_with_nul();
+
+    if cwd.len() <= buf.len() {
+        buf[..cwd.len()].copy_from_slice(cwd);
+        Ok(buf.as_ptr() as _)
+    } else {
+        Err(LinuxError::ERANGE)
+    }
 }

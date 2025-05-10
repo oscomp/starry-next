@@ -12,28 +12,20 @@ use crate::{ptr::UserConstPtr, syscall_instrument};
 #[apply(syscall_instrument)]
 pub fn sys_execve(
     path: UserConstPtr<c_char>,
-    argv: UserConstPtr<usize>,
-    envp: UserConstPtr<usize>,
+    argv: UserConstPtr<UserConstPtr<c_char>>,
+    envp: UserConstPtr<UserConstPtr<c_char>>,
 ) -> LinuxResult<isize> {
     let path = path.get_as_str()?.to_string();
 
     let args = argv
         .get_as_null_terminated()?
         .iter()
-        .map(|arg| {
-            UserConstPtr::<c_char>::from(*arg)
-                .get_as_str()
-                .map(|s| s.to_string())
-        })
+        .map(|arg| arg.get_as_str().map(Into::into))
         .collect::<Result<Vec<_>, _>>()?;
     let envs = envp
         .get_as_null_terminated()?
         .iter()
-        .map(|env| {
-            UserConstPtr::<c_char>::from(*env)
-                .get_as_str()
-                .map(|s| s.to_string())
-        })
+        .map(|env| env.get_as_str().map(Into::into))
         .collect::<Result<Vec<_>, _>>()?;
 
     info!(

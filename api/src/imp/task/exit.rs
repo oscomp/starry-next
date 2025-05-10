@@ -5,8 +5,9 @@ use linux_raw_sys::general::SI_KERNEL;
 use starry_core::task::ProcessData;
 
 use crate::{
-    ptr::{PtrWrapper, UserPtr},
-    send_signal_process, send_signal_thread,
+    file::FD_TABLE,
+    ptr::UserPtr,
+    signal::{send_signal_process, send_signal_thread},
 };
 
 pub fn do_exit(exit_code: i32, group_exit: bool) -> ! {
@@ -17,8 +18,8 @@ pub fn do_exit(exit_code: i32, group_exit: bool) -> ! {
     info!("{:?} exit with code: {}", thread, exit_code);
 
     let clear_child_tid = UserPtr::<Pid>::from(curr_ext.thread_data().clear_child_tid());
-    if let Ok(clear_tid) = clear_child_tid.get() {
-        unsafe { clear_tid.write(0) };
+    if let Ok(clear_tid) = clear_child_tid.get_as_mut() {
+        *clear_tid = 0;
 
         // Since `guard` (WaitQueueGuard) acquires lock to the futex table on
         // drop, we need to ensure that the temporary lock's lifetime is
@@ -48,6 +49,8 @@ pub fn do_exit(exit_code: i32, group_exit: bool) -> ! {
 
         process.exit();
         // TODO: clear namespace resources
+        // FIXME: axns should drop all the resources
+        FD_TABLE.clear();
     }
     if group_exit && !process.is_group_exited() {
         process.group_exit();
