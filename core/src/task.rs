@@ -8,6 +8,7 @@ use core::{
 };
 
 use alloc::{
+    collections::btree_map::BTreeMap,
     string::String,
     sync::{Arc, Weak},
     vec::Vec,
@@ -207,6 +208,9 @@ pub struct ProcessData {
 
     /// The process signal manager
     pub signal: Arc<ProcessSignalManager<RawMutex, WaitQueueWrapper>>,
+
+    /// The futex table.
+    pub futex_table: Mutex<BTreeMap<usize, Arc<WaitQueue>>>,
 }
 
 impl ProcessData {
@@ -231,6 +235,8 @@ impl ProcessData {
                 signal_actions,
                 axconfig::plat::SIGNAL_TRAMPOLINE,
             )),
+
+            futex_table: Mutex::default(),
         }
     }
 
