@@ -4,12 +4,10 @@ use alloc::{string::ToString, vec::Vec};
 use axerrno::{LinuxError, LinuxResult};
 use axhal::arch::UspaceContext;
 use axtask::{TaskExtRef, current};
-use macro_rules_attribute::apply;
 use starry_core::mm::{load_user_app, map_trampoline};
 
-use crate::{ptr::UserConstPtr, syscall_instrument};
+use crate::ptr::UserConstPtr;
 
-#[apply(syscall_instrument)]
 pub fn sys_execve(
     path: UserConstPtr<c_char>,
     argv: UserConstPtr<UserConstPtr<c_char>>,

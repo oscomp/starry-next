@@ -1,15 +1,12 @@
 use core::ffi::c_int;
 
 use axerrno::LinuxResult;
-use macro_rules_attribute::apply;
 
 use crate::{
     file::{FileLike, Pipe, close_file_like},
     ptr::UserPtr,
-    syscall_instrument,
 };
 
-#[apply(syscall_instrument)]
 pub fn sys_pipe2(fds: UserPtr<[c_int; 2]>, flags: i32) -> LinuxResult<isize> {
     if flags != 0 {
         warn!("sys_pipe2: unsupported flags: {}", flags);

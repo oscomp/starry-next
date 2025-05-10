@@ -3,13 +3,11 @@ use core::ffi::{c_char, c_int};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use linux_raw_sys::general::{AT_EMPTY_PATH, stat, statx};
-use macro_rules_attribute::apply;
 
 use crate::{
     file::{Directory, File, FileLike, Kstat, get_file_like},
     path::handle_file_path,
     ptr::{UserConstPtr, UserPtr, nullable},
-    syscall_instrument,
 };
 
 fn stat_at_path(path: &str) -> LinuxResult<Kstat> {
@@ -27,7 +25,6 @@ fn stat_at_path(path: &str) -> LinuxResult<Kstat> {
 /// Get the file metadata by `path` and write into `statbuf`.
 ///
 /// Return 0 if success.
-#[apply(syscall_instrument)]
 pub fn sys_stat(path: UserConstPtr<c_char>, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
     debug!("sys_stat <= path: {}", path);
@@ -40,7 +37,6 @@ pub fn sys_stat(path: UserConstPtr<c_char>, statbuf: UserPtr<stat>) -> LinuxResu
 /// Get file metadata by `fd` and write into `statbuf`.
 ///
 /// Return 0 if success.
-#[apply(syscall_instrument)]
 pub fn sys_fstat(fd: i32, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
     debug!("sys_fstat <= fd: {}", fd);
     *statbuf.get_as_mut()? = get_file_like(fd)?.stat()?.into();
@@ -50,13 +46,11 @@ pub fn sys_fstat(fd: i32, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
 /// Get the metadata of the symbolic link and write into `buf`.
 ///
 /// Return 0 if success.
-#[apply(syscall_instrument)]
 pub fn sys_lstat(path: UserConstPtr<c_char>, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
     // TODO: symlink
     sys_stat(path, statbuf)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_fstatat(
     dirfd: c_int,
     path: UserConstPtr<c_char>,
@@ -83,7 +77,6 @@ pub fn sys_fstatat(
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_statx(
     dirfd: c_int,
     path: UserConstPtr<c_char>,

@@ -3,13 +3,11 @@ use core::ffi::{c_char, c_int, c_void};
 use alloc::ffi::CString;
 use axerrno::{LinuxError, LinuxResult};
 use linux_raw_sys::general::{__kernel_ino_t, __kernel_off_t, AT_FDCWD, AT_REMOVEDIR};
-use macro_rules_attribute::apply;
 
 use crate::{
     file::{Directory, FileLike},
     path::{HARDLINK_MANAGER, handle_file_path},
     ptr::{UserConstPtr, UserPtr, nullable},
-    syscall_instrument,
 };
 
 /// The ioctl() system call manipulates the underlying device parameters
@@ -20,13 +18,11 @@ use crate::{
 /// * `op` - The request code. It is of type unsigned long in glibc and BSD,
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
-#[apply(syscall_instrument)]
 pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
     warn!("Unimplemented syscall: SYS_IOCTL");
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
     debug!("sys_chdir <= {:?}", path);
@@ -35,7 +31,6 @@ pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_mkdirat(dirfd: i32, path: UserConstPtr<c_char>, mode: u32) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
     debug!(
@@ -153,7 +148,6 @@ impl<'a> DirBuffer<'a> {
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_getdents64(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
     let buf = buf.get_as_mut_slice(len)?;
     debug!(
@@ -226,7 +220,6 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isiz
 /// new_path: new file path
 /// flags: link flags
 /// return value: return 0 when success, else return -1.
-#[apply(syscall_instrument)]
 pub fn sys_linkat(
     old_dirfd: c_int,
     old_path: UserConstPtr<c_char>,
@@ -267,7 +260,6 @@ pub fn sys_link(
 /// path: the name of link to be removed
 /// flags: can be 0 or AT_REMOVEDIR
 /// return 0 when success, else return -1
-#[apply(syscall_instrument)]
 pub fn sys_unlinkat(dirfd: c_int, path: UserConstPtr<c_char>, flags: u32) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
     debug!(
@@ -297,7 +289,6 @@ pub fn sys_unlink(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
     sys_unlinkat(AT_FDCWD, path, 0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_getcwd(buf: UserPtr<u8>, size: usize) -> LinuxResult<isize> {
     let buf = nullable!(buf.get_as_mut_slice(size))?;
 

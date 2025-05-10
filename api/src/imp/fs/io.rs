@@ -3,18 +3,15 @@ use core::ffi::c_int;
 use axerrno::{LinuxError, LinuxResult};
 use axio::SeekFrom;
 use linux_raw_sys::general::{__kernel_off_t, iovec};
-use macro_rules_attribute::apply;
 
 use crate::{
     file::{File, FileLike, get_file_like},
     ptr::{UserConstPtr, UserPtr},
-    syscall_instrument,
 };
 
 /// Read data from the file indicated by `fd`.
 ///
 /// Return the read size if success.
-#[apply(syscall_instrument)]
 pub fn sys_read(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
     let buf = buf.get_as_mut_slice(len)?;
     debug!(
@@ -29,7 +26,6 @@ pub fn sys_read(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
 /// Write data to the file indicated by `fd`.
 ///
 /// Return the written size if success.
-#[apply(syscall_instrument)]
 pub fn sys_write(fd: i32, buf: UserConstPtr<u8>, len: usize) -> LinuxResult<isize> {
     let buf = buf.get_as_slice(len)?;
     debug!(
@@ -41,7 +37,6 @@ pub fn sys_write(fd: i32, buf: UserConstPtr<u8>, len: usize) -> LinuxResult<isiz
     Ok(get_file_like(fd)?.write(buf)? as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_writev(fd: i32, iov: UserConstPtr<iovec>, iocnt: usize) -> LinuxResult<isize> {
     if !(0..=1024).contains(&iocnt) {
         return Err(LinuxError::EINVAL);

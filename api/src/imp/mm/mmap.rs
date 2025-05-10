@@ -6,13 +6,9 @@ use linux_raw_sys::general::{
     MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
     PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE,
 };
-use macro_rules_attribute::apply;
 use memory_addr::{VirtAddr, VirtAddrRange};
 
-use crate::{
-    file::{File, FileLike},
-    syscall_instrument,
-};
+use crate::file::{File, FileLike};
 
 bitflags::bitflags! {
     /// `PROT_*` flags for use with [`sys_mmap`].
@@ -70,7 +66,6 @@ bitflags::bitflags! {
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_mmap(
     addr: usize,
     length: usize,
@@ -151,7 +146,6 @@ pub fn sys_mmap(
     Ok(start_addr.as_usize() as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let curr = current();
     let process_data = curr.task_ext().process_data();
@@ -163,7 +157,6 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     Ok(0)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_mprotect(addr: usize, length: usize, prot: u32) -> LinuxResult<isize> {
     // TODO: implement PROT_GROWSUP & PROT_GROWSDOWN
     let Some(permission_flags) = MmapProt::from_bits(prot) else {

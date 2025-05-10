@@ -9,12 +9,10 @@ use linux_raw_sys::general::{
     __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECTORY,
     O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
 };
-use macro_rules_attribute::apply;
 
 use crate::{
     file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like},
     ptr::UserConstPtr,
-    syscall_instrument,
 };
 
 const O_EXEC: u32 = O_PATH;
@@ -56,7 +54,6 @@ fn flags_to_options(flags: c_int, _mode: __kernel_mode_t) -> OpenOptions {
 /// flags: open flags
 /// mode: see man 7 inode
 /// return new file descriptor if succeed, or return -1.
-#[apply(syscall_instrument)]
 pub fn sys_openat(
     dirfd: c_int,
     path: UserConstPtr<c_char>,
@@ -101,7 +98,6 @@ pub fn sys_openat(
 ///
 /// Return its index in the file table (`fd`). Return `EMFILE` if it already
 /// has the maximum number of files open.
-#[apply(syscall_instrument)]
 pub fn sys_open(
     path: UserConstPtr<c_char>,
     flags: i32,
@@ -110,7 +106,6 @@ pub fn sys_open(
     sys_openat(AT_FDCWD as _, path, flags, mode)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_close(fd: c_int) -> LinuxResult<isize> {
     debug!("sys_close <= {}", fd);
     close_file_like(fd)?;
@@ -123,13 +118,11 @@ fn dup_fd(old_fd: c_int) -> LinuxResult<isize> {
     Ok(new_fd as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_dup(old_fd: c_int) -> LinuxResult<isize> {
     debug!("sys_dup <= {}", old_fd);
     dup_fd(old_fd)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_dup2(old_fd: c_int, new_fd: c_int) -> LinuxResult<isize> {
     debug!("sys_dup2 <= old_fd: {}, new_fd: {}", old_fd, new_fd);
     let mut fd_table = FD_TABLE.write();
@@ -148,7 +141,6 @@ pub fn sys_dup2(old_fd: c_int, new_fd: c_int) -> LinuxResult<isize> {
     Ok(new_fd as _)
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_fcntl(fd: c_int, cmd: c_int, arg: usize) -> LinuxResult<isize> {
     debug!("sys_fcntl <= fd: {} cmd: {} arg: {}", fd, cmd, arg);
 

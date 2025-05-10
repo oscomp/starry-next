@@ -6,13 +6,9 @@ use bitflags::bitflags;
 use linux_raw_sys::general::{
     __WALL, __WCLONE, __WNOTHREAD, WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WUNTRACED,
 };
-use macro_rules_attribute::apply;
 use starry_core::task::ProcessData;
 
-use crate::{
-    ptr::{UserPtr, nullable},
-    syscall_instrument,
-};
+use crate::ptr::{UserPtr, nullable};
 
 bitflags! {
     #[derive(Debug)]
@@ -59,7 +55,6 @@ impl WaitPid {
     }
 }
 
-#[apply(syscall_instrument)]
 pub fn sys_waitpid(pid: i32, exit_code_ptr: UserPtr<i32>, options: u32) -> LinuxResult<isize> {
     let options = WaitOptions::from_bits_truncate(options);
     info!("sys_waitpid <= pid: {:?}, options: {:?}", pid, options);

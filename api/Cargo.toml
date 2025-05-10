@@ -35,7 +35,6 @@ starry-core.workspace = true
 axio = "0.1.1"
 ctor_bare = "0.2.1"
 flatten_objects = "0.2.3"
-macro_rules_attribute = "0.2"
 num_enum = { version = "0.7", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

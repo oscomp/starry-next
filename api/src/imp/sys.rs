@@ -2,9 +2,8 @@ use core::ffi::c_char;
 
 use axerrno::LinuxResult;
 use linux_raw_sys::system::new_utsname;
-use macro_rules_attribute::apply;
 
-use crate::{ptr::UserPtr, syscall_instrument};
+use crate::ptr::UserPtr;
 
 pub fn sys_getuid() -> LinuxResult<isize> {
     Ok(0)
@@ -41,7 +40,6 @@ const UTSNAME: new_utsname = new_utsname {
     domainname: pad_str("https://github.com/oscomp/starry-next"),
 };
 
-#[apply(syscall_instrument)]
 pub fn sys_uname(name: UserPtr<new_utsname>) -> LinuxResult<isize> {
     *name.get_as_mut()? = UTSNAME;
     Ok(0)

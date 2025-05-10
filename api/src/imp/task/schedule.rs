@@ -1,10 +1,8 @@
 use axerrno::{LinuxError, LinuxResult};
 use linux_raw_sys::general::timespec;
-use macro_rules_attribute::apply;
 
 use crate::{
     ptr::{UserConstPtr, UserPtr, nullable},
-    syscall_instrument,
     time::{timespec_to_timevalue, timevalue_to_timespec},
 };
 
@@ -16,7 +14,6 @@ pub fn sys_sched_yield() -> LinuxResult<isize> {
 /// Sleep some nanoseconds
 ///
 /// TODO: should be woken by signals, and set errno
-#[apply(syscall_instrument)]
 pub fn sys_nanosleep(req: UserConstPtr<timespec>, rem: UserPtr<timespec>) -> LinuxResult<isize> {
     let req = req.get_as_ref()?;
 
