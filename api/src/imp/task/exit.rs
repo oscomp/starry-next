@@ -19,8 +19,7 @@ pub fn do_exit(exit_code: i32, group_exit: bool) -> ! {
     let clear_child_tid = UserPtr::<Pid>::from(curr_ext.thread_data().clear_child_tid());
     if let Ok(clear_tid) = clear_child_tid.get() {
         unsafe { clear_tid.write(0) };
-        if let Some(futex) = curr
-            .task_ext()
+        if let Some(futex) = curr_ext
             .process_data()
             .futex_table
             .lock()
