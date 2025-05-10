@@ -45,6 +45,9 @@ pub fn sys_writev(fd: i32, iov: UserConstPtr<iovec>, iocnt: usize) -> LinuxResul
     let iovs = iov.get_as_slice(iocnt)?;
     let mut ret = 0;
     for iov in iovs {
+        if iov.iov_len == 0 {
+            continue;
+        }
         let buf = UserConstPtr::<u8>::from(iov.iov_base as usize);
         let buf = buf.get_as_slice(iov.iov_len as _)?;
         debug!(
