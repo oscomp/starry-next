@@ -1,9 +1,12 @@
+use core::ffi::c_int;
+
 use axerrno::{LinuxError, LinuxResult};
-use linux_raw_sys::general::iovec;
+use axio::SeekFrom;
+use linux_raw_sys::general::{__kernel_off_t, iovec};
 use macro_rules_attribute::apply;
 
 use crate::{
-    file::get_file_like,
+    file::{File, FileLike, get_file_like},
     ptr::{UserConstPtr, UserPtr},
     syscall_instrument,
 };
@@ -65,4 +68,16 @@ pub fn sys_writev(fd: i32, iov: UserConstPtr<iovec>, iocnt: usize) -> LinuxResul
     }
 
     Ok(ret)
+}
+
+pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResult<isize> {
+    debug!("sys_lseek <= {} {} {}", fd, offset, whence);
+    let pos = match whence {
+        0 => SeekFrom::Start(offset as _),
+        1 => SeekFrom::Current(offset as _),
+        2 => SeekFrom::End(offset as _),
+        _ => return Err(LinuxError::EINVAL),
+    };
+    let off = File::from_fd(fd)?.inner().seek(pos)?;
+    Ok(off as _)
 }
