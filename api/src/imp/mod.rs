@@ -3,6 +3,6 @@ mod mm;
 mod signal;
 mod sys;
 mod task;
-mod utils;
+mod time;
 
-pub use self::{fs::*, mm::*, signal::*, sys::*, task::*, utils::*};
+pub use self::{fs::*, mm::*, signal::*, sys::*, task::*, time::*};
