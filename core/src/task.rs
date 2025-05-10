@@ -8,7 +8,6 @@ use core::{
 };
 
 use alloc::{
-    collections::btree_map::BTreeMap,
     string::String,
     sync::{Arc, Weak},
     vec::Vec,
@@ -31,7 +30,7 @@ use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
 
-use crate::time::TimeStat;
+use crate::{futex::FutexTable, time::TimeStat};
 
 /// Create a new user task.
 pub fn new_user_task(
@@ -210,7 +209,7 @@ pub struct ProcessData {
     pub signal: Arc<ProcessSignalManager<RawMutex, WaitQueueWrapper>>,
 
     /// The futex table.
-    pub futex_table: Mutex<BTreeMap<usize, Arc<WaitQueue>>>,
+    pub futex_table: Mutex<FutexTable>,
 }
 
 impl ProcessData {

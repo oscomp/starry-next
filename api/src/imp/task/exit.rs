@@ -23,8 +23,7 @@ pub fn do_exit(exit_code: i32, group_exit: bool) -> ! {
             .process_data()
             .futex_table
             .lock()
-            .get(&(clear_tid as *const _ as usize))
-            .cloned()
+            .get(clear_tid as *const _ as usize)
         {
             futex.notify_one(false);
         }
