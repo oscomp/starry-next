@@ -10,6 +10,18 @@ pub fn sys_getuid() -> LinuxResult<isize> {
     Ok(0)
 }
 
+pub fn sys_geteuid() -> LinuxResult<isize> {
+    Ok(1)
+}
+
+pub fn sys_getgid() -> LinuxResult<isize> {
+    Ok(0)
+}
+
+pub fn sys_getegid() -> LinuxResult<isize> {
+    Ok(1)
+}
+
 const fn pad_str(info: &str) -> [c_char; 65] {
     let mut data: [c_char; 65] = [0; 65];
     // this needs #![feature(const_copy_from_slice)]

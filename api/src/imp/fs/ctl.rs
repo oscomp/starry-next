@@ -2,7 +2,7 @@ use core::ffi::{c_char, c_int, c_void};
 
 use alloc::ffi::CString;
 use axerrno::{LinuxError, LinuxResult};
-use linux_raw_sys::general::{__kernel_ino_t, __kernel_off_t, AT_REMOVEDIR};
+use linux_raw_sys::general::{__kernel_ino_t, __kernel_off_t, AT_FDCWD, AT_REMOVEDIR};
 use macro_rules_attribute::apply;
 
 use crate::{
@@ -255,6 +255,13 @@ pub fn sys_linkat(
     Ok(0)
 }
 
+pub fn sys_link(
+    old_path: UserConstPtr<c_char>,
+    new_path: UserConstPtr<c_char>,
+) -> LinuxResult<isize> {
+    sys_linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0)
+}
+
 /// remove link of specific file (can be used to delete file)
 /// dir_fd: the directory of link to be removed
 /// path: the name of link to be removed
@@ -284,6 +291,10 @@ pub fn sys_unlinkat(dirfd: c_int, path: UserConstPtr<c_char>, flags: u32) -> Lin
         }
     }
     Ok(0)
+}
+
+pub fn sys_unlink(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
+    sys_unlinkat(AT_FDCWD, path, 0)
 }
 
 #[apply(syscall_instrument)]
