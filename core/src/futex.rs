@@ -1,3 +1,5 @@
+//! Futex implementation.
+
 use core::ops::Deref;
 
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
