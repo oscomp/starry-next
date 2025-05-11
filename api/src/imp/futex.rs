@@ -72,7 +72,9 @@ pub fn sys_futex(
                     }
                     count += 1;
                 }
-                count += wq.requeue(value2 as usize, &wq2) as isize;
+                if count == value as isize {
+                    count += wq.requeue(value2 as usize, &wq2) as isize;
+                }
             }
             Ok(count)
         }
