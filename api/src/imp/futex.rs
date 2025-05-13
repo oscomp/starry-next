@@ -59,9 +59,7 @@ pub fn sys_futex(
 
             let mut futex_table = futex_table.lock();
             let wq = futex_table.get(addr);
-            let wq2 = futex_table
-                .get_or_insert(uaddr2.address().as_usize())
-                .clone();
+            let wq2 = futex_table.get_or_insert(uaddr2.address().as_usize());
             drop(futex_table);
 
             let mut count = 0;
