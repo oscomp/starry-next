@@ -3,6 +3,7 @@ use core::{
     panic,
 };
 
+use alloc::string::ToString;
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use linux_raw_sys::general::{
@@ -12,6 +13,7 @@ use linux_raw_sys::general::{
 
 use crate::{
     file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like},
+    path::handle_file_path,
     ptr::UserConstPtr,
 };
 
@@ -69,6 +71,7 @@ pub fn sys_openat(
     } else {
         Some(Directory::from_fd(dirfd)?)
     };
+    let real_path = handle_file_path(dirfd, path)?;
 
     if !opts.has_directory() {
         match dir.as_ref().map_or_else(
@@ -77,7 +80,7 @@ pub fn sys_openat(
         ) {
             Err(AxError::IsADirectory) => {}
             r => {
-                let fd = File::new(r?, path.into()).add_to_fd_table()?;
+                let fd = File::new(r?, real_path.to_string()).add_to_fd_table()?;
                 return Ok(fd as _);
             }
         }
@@ -88,7 +91,7 @@ pub fn sys_openat(
             || axfs::fops::Directory::open_dir(path, &opts),
             |dir| dir.inner().open_dir_at(path, &opts),
         )?,
-        path.into(),
+        real_path.to_string(),
     )
     .add_to_fd_table()?;
     Ok(fd as _)
