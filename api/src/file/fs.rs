@@ -2,6 +2,7 @@ use core::{any::Any, ffi::c_int};
 
 use alloc::{string::String, sync::Arc};
 use axerrno::{LinuxError, LinuxResult};
+use axfs::fops::DirEntry;
 use axio::PollState;
 use axsync::{Mutex, MutexGuard};
 use linux_raw_sys::general::S_IFDIR;
@@ -76,6 +77,7 @@ impl FileLike for File {
 pub struct Directory {
     inner: Mutex<axfs::fops::Directory>,
     path: String,
+    last_dirent: Mutex<Option<DirEntry>>,
 }
 
 impl Directory {
@@ -83,6 +85,7 @@ impl Directory {
         Self {
             inner: Mutex::new(inner),
             path,
+            last_dirent: Mutex::new(None),
         }
     }
 
@@ -94,6 +97,11 @@ impl Directory {
     /// Get the inner node of the directory.
     pub fn inner(&self) -> MutexGuard<axfs::fops::Directory> {
         self.inner.lock()
+    }
+
+    /// Get the last directory entry.
+    pub fn last_dirent(&self) -> MutexGuard<Option<DirEntry>> {
+        self.last_dirent.lock()
     }
 }
 

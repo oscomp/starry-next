@@ -1,8 +1,15 @@
-use core::ffi::{c_char, c_int, c_void};
+use core::{
+    ffi::{c_char, c_int, c_void},
+    mem::offset_of,
+};
 
 use alloc::ffi::CString;
 use axerrno::{LinuxError, LinuxResult};
-use linux_raw_sys::general::{__kernel_ino_t, __kernel_off_t, AT_FDCWD, AT_REMOVEDIR};
+use axfs::fops::DirEntry;
+use linux_raw_sys::general::{
+    AT_FDCWD, AT_REMOVEDIR, DT_BLK, DT_CHR, DT_DIR, DT_FIFO, DT_LNK, DT_REG, DT_SOCK, DT_UNKNOWN,
+    linux_dirent64,
+};
 
 use crate::{
     file::{Directory, FileLike},
@@ -48,29 +55,18 @@ pub fn sys_mkdirat(dirfd: i32, path: UserConstPtr<c_char>, mode: u32) -> LinuxRe
     Ok(0)
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct DirEnt {
-    d_ino: __kernel_ino_t,
-    d_off: __kernel_off_t,
-    d_reclen: u16,
-    d_type: u8,
-    d_name: [u8; 0],
-}
-
 #[allow(dead_code)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum FileType {
-    Unknown = 0,
-    Fifo = 1,
-    Chr = 2,
-    Dir = 4,
-    Blk = 6,
-    Reg = 8,
-    Lnk = 10,
-    Socket = 12,
-    Wht = 14,
+    Unknown = DT_UNKNOWN as u8,
+    Fifo = DT_FIFO as u8,
+    Chr = DT_CHR as u8,
+    Dir = DT_DIR as u8,
+    Blk = DT_BLK as u8,
+    Reg = DT_REG as u8,
+    Lnk = DT_LNK as u8,
+    Socket = DT_SOCK as u8,
 }
 
 impl From<axfs::api::FileType> for FileType {
@@ -79,29 +75,6 @@ impl From<axfs::api::FileType> for FileType {
             ft if ft.is_dir() => FileType::Dir,
             ft if ft.is_file() => FileType::Reg,
             _ => FileType::Unknown,
-        }
-    }
-}
-
-impl DirEnt {
-    const FIXED_SIZE: usize = core::mem::size_of::<u64>()
-        + core::mem::size_of::<i64>()
-        + core::mem::size_of::<u16>()
-        + core::mem::size_of::<u8>();
-
-    fn new(ino: u64, off: i64, reclen: usize, file_type: FileType) -> Self {
-        Self {
-            d_ino: ino,
-            d_off: off,
-            d_reclen: reclen as u16,
-            d_type: file_type as u8,
-            d_name: [],
-        }
-    }
-
-    unsafe fn write_name(&mut self, name: &[u8]) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(name.as_ptr(), self.d_name.as_mut_ptr(), name.len());
         }
     }
 }
@@ -121,30 +94,34 @@ impl<'a> DirBuffer<'a> {
         self.buf.len().saturating_sub(self.offset)
     }
 
-    fn can_fit_entry(&self, entry_size: usize) -> bool {
-        self.remaining_space() >= entry_size
-    }
+    fn write_entry(&mut self, d_type: FileType, name: &[u8]) -> bool {
+        const NAME_OFFSET: usize = offset_of!(linux_dirent64, d_name);
 
-    fn write_entry(&mut self, dirent: DirEnt, name: &[u8]) -> Result<(), ()> {
-        if !self.can_fit_entry(dirent.d_reclen as usize) {
-            return Err(());
+        let len = NAME_OFFSET + name.len() + 1;
+        // alignment
+        let len = len.next_multiple_of(align_of::<linux_dirent64>());
+        if self.remaining_space() < len {
+            return false;
         }
+
         unsafe {
-            let entry_ptr = self.buf.as_mut_ptr().add(self.offset) as *mut DirEnt;
-            entry_ptr.write(dirent);
-            (*entry_ptr).write_name(name);
+            let entry_ptr = self.buf.as_mut_ptr().add(self.offset);
+            entry_ptr.cast::<linux_dirent64>().write(linux_dirent64 {
+                // FIXME: real inode number
+                d_ino: 1,
+                d_off: 0,
+                d_reclen: len as _,
+                d_type: d_type as _,
+                d_name: Default::default(),
+            });
+
+            let name_ptr = entry_ptr.add(NAME_OFFSET);
+            name_ptr.copy_from_nonoverlapping(name.as_ptr(), name.len());
+            name_ptr.add(name.len()).write(0);
         }
 
-        self.offset += dirent.d_reclen as usize;
-        Ok(())
-    }
-
-    fn read_entry(&self, offset: usize) -> Option<&DirEnt> {
-        if offset + DirEnt::FIXED_SIZE > self.buf.len() {
-            return None;
-        }
-        let entry_ptr = unsafe { self.buf.as_ptr().add(offset) as *const DirEnt };
-        Some(unsafe { &*entry_ptr })
+        self.offset += len;
+        true
     }
 }
 
@@ -157,62 +134,37 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isiz
         buf.len()
     );
 
-    if len < DirEnt::FIXED_SIZE {
-        warn!("Buffer size too small: {len}");
-        return Err(LinuxError::EINVAL);
-    }
-
     let mut buffer = DirBuffer::new(buf);
 
-    let (initial_offset, count) = {
-        let mut buf_offset = 0;
-        let mut count = 0;
-        while let Some(dir_ent) = buffer.read_entry(buf_offset) {
-            if dir_ent.d_reclen == 0 {
-                break;
-            }
-
-            buf_offset += dir_ent.d_reclen as usize;
-            assert_eq!(dir_ent.d_off, buf_offset as i64);
-            count += 1;
-        }
-        (buf_offset as i64, count)
-    };
-
     let dir = Directory::from_fd(fd)?;
-    let path = dir.path();
 
-    let mut total_size = initial_offset as usize;
-    let mut current_offset = initial_offset;
+    let mut last_dirent = dir.last_dirent();
+    if let Some(ent) = last_dirent.take() {
+        if !buffer.write_entry(ent.entry_type().into(), ent.name_as_bytes()) {
+            *last_dirent = Some(ent);
+            return Err(LinuxError::EINVAL);
+        }
+    }
 
-    for entry in axfs::api::read_dir(path)?.flatten().skip(count) {
-        let mut name = entry.file_name();
-        name.push('\0');
-        let name_bytes = name.as_bytes();
-
-        let entry_size = DirEnt::FIXED_SIZE + name_bytes.len();
-        current_offset += entry_size as i64;
-
-        let dirent = DirEnt::new(
-            1,
-            current_offset,
-            entry_size,
-            FileType::from(entry.file_type()),
-        );
-
-        if buffer.write_entry(dirent, name_bytes).is_err() {
+    let mut inner = dir.inner();
+    loop {
+        let mut dirents = [DirEntry::default()];
+        let cnt = inner.read_dir(&mut dirents)?;
+        if cnt == 0 {
             break;
         }
 
-        total_size += entry_size;
+        let [ent] = dirents;
+        if !buffer.write_entry(ent.entry_type().into(), ent.name_as_bytes()) {
+            *last_dirent = Some(ent);
+            break;
+        }
     }
 
-    if total_size > 0 && buffer.can_fit_entry(DirEnt::FIXED_SIZE) {
-        let terminal = DirEnt::new(1, current_offset, 0, FileType::Reg);
-        let _ = buffer.write_entry(terminal, &[]);
+    if last_dirent.is_some() && buffer.offset == 0 {
+        return Err(LinuxError::EINVAL);
     }
-
-    Ok(total_size as isize)
+    Ok(buffer.offset as _)
 }
 
 /// create a link from new_path to old_path
