@@ -15,7 +15,7 @@ use starry_core::task::{get_process, get_process_group, get_thread, processes};
 use crate::{
     ptr::{UserConstPtr, UserPtr, nullable},
     signal::{check_signals, send_signal_process, send_signal_process_group, send_signal_thread},
-    time::timespec_to_timevalue,
+    time::TimeValueLike,
 };
 
 fn check_sigset_size(size: usize) -> LinuxResult<()> {
@@ -221,8 +221,7 @@ pub fn sys_rt_sigtimedwait(
     check_sigset_size(sigsetsize)?;
 
     let set = *set.get_as_ref()?;
-    let timeout: Option<Duration> =
-        nullable!(timeout.get_as_ref())?.map(|ts| timespec_to_timevalue(*ts));
+    let timeout: Option<Duration> = nullable!(timeout.get_as_ref())?.map(|ts| ts.to_time_value());
 
     let Some(sig) = current()
         .task_ext()

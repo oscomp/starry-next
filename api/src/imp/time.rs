@@ -5,10 +5,7 @@ use linux_raw_sys::general::{
 };
 use starry_core::task::time_stat_output;
 
-use crate::{
-    ptr::UserPtr,
-    time::{timevalue_to_timespec, timevalue_to_timeval},
-};
+use crate::{ptr::UserPtr, time::TimeValueLike};
 
 pub fn sys_clock_gettime(
     clock_id: __kernel_clockid_t,
@@ -25,24 +22,24 @@ pub fn sys_clock_gettime(
             return Err(LinuxError::EINVAL);
         }
     };
-    *ts.get_as_mut()? = timevalue_to_timespec(now);
+    *ts.get_as_mut()? = timespec::from_time_value(now);
     Ok(0)
 }
 
-pub fn sys_get_time_of_day(ts: UserPtr<timeval>) -> LinuxResult<isize> {
-    *ts.get_as_mut()? = timevalue_to_timeval(monotonic_time());
+pub fn sys_gettimeofday(ts: UserPtr<timeval>) -> LinuxResult<isize> {
+    *ts.get_as_mut()? = timeval::from_time_value(wall_time());
     Ok(0)
 }
 
 #[repr(C)]
 pub struct Tms {
-    /// 进程用户态执行时间，单位为us
+    /// user time
     tms_utime: usize,
-    /// 进程内核态执行时间，单位为us
+    /// system time
     tms_stime: usize,
-    /// 子进程用户态执行时间和，单位为us
+    /// user time of children
     tms_cutime: usize,
-    /// 子进程内核态执行时间和，单位为us
+    /// system time of children
     tms_cstime: usize,
 }
 

@@ -3,7 +3,7 @@ use linux_raw_sys::general::timespec;
 
 use crate::{
     ptr::{UserConstPtr, UserPtr, nullable},
-    time::{timespec_to_timevalue, timevalue_to_timespec},
+    time::TimeValueLike,
 };
 
 pub fn sys_sched_yield() -> LinuxResult<isize> {
@@ -21,7 +21,7 @@ pub fn sys_nanosleep(req: UserConstPtr<timespec>, rem: UserPtr<timespec>) -> Lin
         return Err(LinuxError::EINVAL);
     }
 
-    let dur = timespec_to_timevalue(*req);
+    let dur = req.to_time_value();
     debug!("sys_nanosleep <= {:?}", dur);
 
     let now = axhal::time::monotonic_time();
@@ -33,7 +33,7 @@ pub fn sys_nanosleep(req: UserConstPtr<timespec>, rem: UserPtr<timespec>) -> Lin
 
     if let Some(diff) = dur.checked_sub(actual) {
         if let Some(rem) = nullable!(rem.get_as_mut())? {
-            *rem = timevalue_to_timespec(diff);
+            *rem = timespec::from_time_value(diff);
         }
         Err(LinuxError::EINTR)
     } else {

@@ -6,7 +6,7 @@ use linux_raw_sys::general::{
 
 use crate::{
     ptr::{UserConstPtr, UserPtr, nullable},
-    time::timespec_to_timevalue,
+    time::TimeValueLike,
 };
 
 pub fn sys_futex(
@@ -32,7 +32,7 @@ pub fn sys_futex(
             let wq = futex_table.lock().get_or_insert(addr);
 
             if let Some(timeout) = nullable!(timeout.get_as_ref())? {
-                wq.wait_timeout(timespec_to_timevalue(*timeout));
+                wq.wait_timeout(timeout.to_time_value());
             } else {
                 wq.wait();
             }
