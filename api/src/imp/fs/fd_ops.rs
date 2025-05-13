@@ -147,7 +147,7 @@ pub fn sys_fcntl(fd: c_int, cmd: c_int, arg: usize) -> LinuxResult<isize> {
     match cmd as u32 {
         F_DUPFD => dup_fd(fd),
         F_DUPFD_CLOEXEC => {
-            // TODO: Change fd flags
+            warn!("sys_fcntl: treat F_DUPFD_CLOEXEC as F_DUPFD");
             dup_fd(fd)
         }
         F_SETFL => {
