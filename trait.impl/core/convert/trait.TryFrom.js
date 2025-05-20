@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["starry_api",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.TryFrom.html\" title=\"trait core::convert::TryFrom\">TryFrom</a>&lt;<a class=\"struct\" href=\"starry_api/sockaddr/struct.SockAddr.html\" title=\"struct starry_api::sockaddr::SockAddr\">SockAddr</a>&gt; for <a class=\"enum\" href=\"https://doc.rust-lang.org/nightly/core/net/socket_addr/enum.SocketAddr.html\" title=\"enum core::net::socket_addr::SocketAddr\">SocketAddr</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.TryFrom.html\" title=\"trait core::convert::TryFrom\">TryFrom</a>&lt;<a class=\"struct\" href=\"starry_api/sockaddr/struct.SockAddr.html\" title=\"struct starry_api::sockaddr::SockAddr\">SockAddr</a>&gt; for <a class=\"struct\" href=\"https://doc.rust-lang.org/nightly/core/net/socket_addr/struct.SocketAddrV4.html\" title=\"struct core::net::socket_addr::SocketAddrV4\">SocketAddrV4</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.TryFrom.html\" title=\"trait core::convert::TryFrom\">TryFrom</a>&lt;<a class=\"struct\" href=\"starry_api/sockaddr/struct.SockAddr.html\" title=\"struct starry_api::sockaddr::SockAddr\">SockAddr</a>&gt; for <a class=\"struct\" href=\"https://doc.rust-lang.org/nightly/core/net/socket_addr/struct.SocketAddrV6.html\" title=\"struct core::net::socket_addr::SocketAddrV6\">SocketAddrV6</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1432]}

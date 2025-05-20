@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LinkError"],"fn":["handle_file_path"],"static":["HARDLINK_MANAGER"],"struct":["FilePath","HardlinkManager"]};

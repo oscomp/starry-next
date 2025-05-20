@@ -1,0 +1,3 @@
+var srcIndex = new Map(JSON.parse('[["starry",["",[],["entry.rs","main.rs","mm.rs","syscall.rs"]]],["starry_api",["",[["file",[],["fs.rs","mod.rs","net.rs","pipe.rs","stdio.rs"]],["imp",[["fs",[],["ctl.rs","fd_ops.rs","io.rs","mod.rs","mount.rs","pipe.rs","stat.rs"]],["mm",[],["brk.rs","mmap.rs","mod.rs"]],["task",[],["clone.rs","execve.rs","exit.rs","mod.rs","schedule.rs","thread.rs","wait.rs"]]],["futex.rs","mod.rs","signal.rs","sys.rs","time.rs"]]],["lib.rs","path.rs","ptr.rs","signal.rs","sockaddr.rs","time.rs"]]],["starry_core",["",[],["futex.rs","lib.rs","mm.rs","task.rs","time.rs"]]]]'));
+createSrcSidebar();
+//{"start":36,"fragment_lengths":[62,425,74]}

@@ -1,0 +1,147 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Ask DeepWiki"><title>starry - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-c579a84d.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="starry" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (6067b3631 2025-01-17)" data-channel="nightly" data-search-js="search-ccb196c1.js" data-settings-js="settings-0f613d39.js" ><script src="../static.files/storage-59e33391.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../starry/index.html">starry</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#starryos" title="StarryOS">StarryOS</a><ul><li><a href="#quick-start" title="Quick Start">Quick Start</a></li><li><a href="#test-for-oscomp-testcases" title="Test for oscomp testcases">Test for oscomp testcases</a></li><li><a href="#how-to-add-new-testcases" title="How to add new testcases">How to add new testcases</a></li></ul></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>starry</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/starry/main.rs.html#1-36">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><a href="https://deepwiki.com/oscomp/starry-next"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a></p>
+<h2 id="starryos"><a class="doc-anchor" href="#starryos">§</a>StarryOS</h2>
+<p><a href="https://github.com/arceos-org/starry-next/actions/workflows/ci.yml"><img src="https://github.com/arceos-org/starry-next/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></p>
+<p>A monolithic kernel based on <a href="https://github.com/arceos-org/arceos">ArceOS</a>.</p>
+<h3 id="quick-start"><a class="doc-anchor" href="#quick-start">§</a>Quick Start</h3><h4 id="build-and-run-through-docker"><a class="doc-anchor" href="#build-and-run-through-docker">§</a>Build and Run through Docker</h4>
+<p>Install <a href="https://www.docker.com/">Docker</a> in your system.</p>
+<p>Then build all dependencies through provided dockerfile:</p>
+<div class="example-wrap"><pre class="language-bash"><code>./scripts/get_deps.sh
+cd .arceos
+docker build -t starry -f Dockerfile .</code></pre></div>
+<p>Create a container and build/run app:</p>
+<div class="example-wrap"><pre class="language-bash"><code># back to the root directory of the project
+cd ..
+docker run --privileged --rm -it -v $(pwd):/starry -w /starry starry bash
+
+
+# Now build/run app in the container
+make user_apps
+make defconfig
+make run</code></pre></div><h4 id="manually-build-and-run"><a class="doc-anchor" href="#manually-build-and-run">§</a>Manually Build and Run</h4><h5 id="1-install-build-dependencies"><a class="doc-anchor" href="#1-install-build-dependencies">§</a>1. Install Build Dependencies</h5><div class="example-wrap"><pre class="language-bash"><code>cargo install cargo-binutils axconfig-gen
+
+sudo apt install libclang-dev cmake dosfstools build-essential</code></pre></div>
+<p>Download &amp; install <a href="https://musl.cc">musl</a> toolchains:</p>
+<div class="example-wrap"><pre class="language-bash"><code># download
+wget https://musl.cc/aarch64-linux-musl-cross.tgz
+wget https://musl.cc/riscv64-linux-musl-cross.tgz
+wget https://musl.cc/x86_64-linux-musl-cross.tgz
+wget https://github.com/LoongsonLab/oscomp-toolchains-for-oskernel/releases/download/loongarch64-linux-musl-cross-gcc-13.2.0/loongarch64-linux-musl-cross.tgz
+# install
+tar zxf aarch64-linux-musl-cross.tgz
+tar zxf riscv64-linux-musl-cross.tgz
+tar zxf x86_64-linux-musl-cross.tgz
+tar zxf loongarch64-linux-musl-cross.tgz
+
+# exec below command in bash OR add below info in ~/.bashrc
+export PATH=`pwd`/x86_64-linux-musl-cross/bin:`pwd`/aarch64-linux-musl-cross/bin:`pwd`/riscv64-linux-musl-cross/bin:`pwd`/loongarch64-linux-musl-cross/bin:$PATH</code></pre></div><h5 id="2-dependencies-for-running-apps"><a class="doc-anchor" href="#2-dependencies-for-running-apps">§</a>2. Dependencies for running apps</h5><div class="example-wrap"><pre class="language-bash"><code># for Debian/Ubuntu
+sudo apt-get install qemu-system</code></pre></div><div class="example-wrap"><pre class="language-bash"><code># for macos
+brew install qemu</code></pre></div>
+<p>Notice: The version of <code>qemu</code> should <strong>be no less than 8.2.0</strong>.</p>
+<p>Other systems, arch and version please refer to <a href="https://www.qemu.org/download/#linux">Qemu Download</a></p>
+<h5 id="3-build--run"><a class="doc-anchor" href="#3-build--run">§</a>3. Build &amp; Run</h5><div class="example-wrap"><pre class="language-bash"><code># Clone the base repository
+./scripts/get_deps.sh
+
+# Run riscv64 example
+make ARCH=riscv64 AX_TESTCASE=nimbos user_apps
+# When running on a new architecture, you need to generate the configuration file again.
+make ARCH=riscv64 defconfig
+make ARCH=riscv64 AX_TESTCASE=nimbos BLK=y NET=y ACCEL=n run
+
+# Run x86_64 example
+make ARCH=x86_64 AX_TESTCASE=nimbos user_apps
+# When running on a new architecture, you need to generate the configuration file again.
+make ARCH=x86_64 defconfig
+make ARCH=x86_64 AX_TESTCASE=nimbos BLK=y NET=y ACCEL=n run
+
+# Run aarch64 example
+make ARCH=aarch64 AX_TESTCASE=nimbos user_apps
+make ARCH=aarch64 defconfig
+make ARCH=aarch64 AX_TESTCASE=nimbos BLK=y NET=y FEATURES=fp_simd ACCEL=n run
+
+# Run Loongarch64 example
+make ARCH=loongarch64 AX_TESTCASE=nimbos user_apps
+make ARCH=loongarch64 defconfig
+make ARCH=loongarch64 AX_TESTCASE=nimbos BLK=y NET=y ACCEL=n run
+
+# Run another example (libc testcases)
+make ARCH=riscv64 AX_TESTCASE=libc user_apps
+make ARCH=riscv64 defconfig
+# When running libc testcases, you need to enable `fp_simd` feature.
+make ARCH=riscv64 AX_TESTCASE=libc BLK=y NET=y FEATURES=fp_simd ACCEL=n run</code></pre></div><h5 id="4-commands-explanation"><a class="doc-anchor" href="#4-commands-explanation">§</a>4. Commands Explanation</h5><div class="example-wrap"><pre class="language-bash"><code># Clone the base repository
+./scripts/get_deps.sh
+
+# Build user applications
+make ARCH=&lt;arch&gt; AX_TESTCASE=&lt;testcases&gt; user_apps
+
+# Build kernel
+make ARCH=&lt;arch&gt; LOG=&lt;log&gt; AX_TESTCASE=&lt;testcases&gt; build
+
+# Run kernel
+make ARCH=&lt;arch&gt; LOG=&lt;log&gt; AX_TESTCASE=&lt;testcases&gt; run</code></pre></div>
+<p>Where <code>testcases</code> are shown under the <code>apps/</code> folder.</p>
+<p><code>&lt;arch&gt;</code> should be one of <code>riscv64</code>, <code>aarch64</code>, <code>x86_64</code>, <code>loongarch64</code>.</p>
+<p><code>&lt;log&gt;</code> should be one of <code>off</code>, <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>.</p>
+<p>More arguments and targets can be found in <a href="./Makefile">Makefile</a>.</p>
+<p>For example, to run the <a href="apps/nimbos/">nimbos testcases</a> on <code>qemu-system-x86_64</code> with log level <code>info</code>:</p>
+<div class="example-wrap"><pre class="language-bash"><code>make ARCH=x86_64 LOG=info AX_TESTCASE=nimbos run</code></pre></div>
+<p>Note: Arguments like <code>NET</code>, <code>BLK</code>, and <code>GRAPHIC</code> enable devices in QEMU, which take effect only at runtime, not at build time. More features can be found in the <a href="https://github.com/oscomp/arceos/blob/main/ulib/axstd/Cargo.toml">Cargo.toml of arceos</a>.</p>
+<h5 id="development-with-visual-studio-code"><a class="doc-anchor" href="#development-with-visual-studio-code">§</a>Development with Visual Studio Code</h5>
+<p>Since ArceOS relies on special build scripts and some environment variables, this usually causes <code>rust-analyzer</code> to prompt some annoying errors. You may want to put the following configuration into <code>.vscode/settings.json</code> (ie workspace settings):</p>
+<div class="example-wrap"><pre class="language-json"><code>{
+  &quot;rust-analyzer.cargo.extraEnv&quot;: {
+    &quot;AX_CONFIG_PATH&quot;: &quot;${workspaceFolder}/.axconfig.toml&quot;
+  }
+}</code></pre></div><h3 id="test-for-oscomp-testcases"><a class="doc-anchor" href="#test-for-oscomp-testcases">§</a>Test for oscomp testcases</h3>
+<p>We can run <a href="https://github.com/oscomp/testsuits-for-oskernel/tree/pre-2025">testcases of the OS competition</a> with StarryOS. Guidence can be found in <a href="https://azure-stars.github.io/Starry-Tutorial-Book/ch03-02.html">Starry-Tutorial</a>.</p>
+<p>And you can run the testcases with the following commands:</p>
+<div class="example-wrap"><pre class="language-bash"><code># Clone the base repository
+./scripts/get_deps.sh
+
+# run the testcases of oscomp on x86_64
+$ make oscomp_run ARCH=x86_64   # If it reports an error: -accel kvm: failed to initialize kvm: Permission denied, please add `ACCEL=n` argument.
+
+# run the testcases of oscomp on riscv64
+$ make oscomp_run ARCH=riscv64
+
+# run the testcases of oscomp on aarch64
+$ make oscomp_run ARCH=aarch64
+
+# run the testcases of oscomp on loongarch64
+$ make oscomp_run ARCH=loongarch64</code></pre></div>
+<p>To run more testcases from oscomp, you can refer to the <a href="./apps/oscomp/README.md">oscomp README</a>.</p>
+<h3 id="how-to-add-new-testcases"><a class="doc-anchor" href="#how-to-add-new-testcases">§</a>How to add new testcases</h3>
+<p>To allow the kernel to run user-written test cases, temporary test cases can be created.</p>
+<p>If you want to add source codes of the testcases, you can refer to the <a href="./apps/libc">libc testcases</a> and add your source codes in the <a href="./apps/libc/c/">c testcase</a> folder, and append the <a href="./apps/libc/testcase_list">testcase_list</a> with your testcase name. Then you can run the testcases with the following commands:</p>
+<div class="example-wrap"><pre class="language-sh"><code>make AX_TESTCASE=libc user_apps ARCH=$(YOUR_ARCH)
+make AX_TESTCASE=libc BLK=y NET=y FEATURES=fp_simd ACCEL=n run ARCH=$(YOUR_ARCH)</code></pre></div>
+<p>If you want to add <strong>executable file</strong> directly, the specific steps are as follows:</p>
+<ol>
+<li>
+<p>Create a temporary test case folder</p>
+<div class="example-wrap"><pre class="language-sh"><code>cd apps &amp;&amp; mkdir custom &amp;&amp; cd custom</code></pre></div></li>
+<li>
+<p>Create a <code>Makefile</code> in the current directory and fill in the following content:</p>
+<div class="example-wrap"><pre class="language-makefile"><code>all: build
+
+build:
+
+clean:
+    rm -rf *.out</code></pre></div>
+<p>The reason for creating an empty build <code>Makefile</code> is that when Starry packages test case images, it will first execute the test case’s build program by default. However, since our temporary test case does not currently have a defined build program, <code>make all</code> does not need to perform any operations.</p>
+</li>
+<li>
+<p>Copy your <strong>executable file</strong> into the current directory.</p>
+</li>
+<li>
+<p>Create a <code>testcase_list</code> file in the current directory and add the relative path of the executable file that needs to be executed. Note that this path should be relative to <code>apps/custom</code> (i.e., the current directory). In our example, the content should be:</p>
+<div class="example-wrap"><pre class="language-sh"><code>hello</code></pre></div></li>
+<li>
+<p>Return to the project root directory and run the following command:</p>
+<div class="example-wrap"><pre class="language-sh"><code>sudo ./build_img.sh -fs ext4 -file apps/custom
+cp disk.img .arceos/disk.img
+make defconfig
+make AX_TESTCASE=custom ARCH=x86_64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs LOG=off ACCEL=n run</code></pre></div>
+<p>This completes the execution of the custom test case.</p>
+</li>
+</ol>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="entry/index.html" title="mod starry::entry">entry</a><span title="Restricted Visibility">&nbsp;🔒</span> </div></li><li><div class="item-name"><a class="mod" href="mm/index.html" title="mod starry::mm">mm</a><span title="Restricted Visibility">&nbsp;🔒</span> </div></li><li><div class="item-name"><a class="mod" href="syscall/index.html" title="mod starry::syscall">syscall</a><span title="Restricted Visibility">&nbsp;🔒</span> </div></li></ul><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="fn" href="fn.main.html" title="fn starry::main">main</a><span title="Restricted Visibility">&nbsp;🔒</span> </div></li></ul></section></div></main></body></html>
