@@ -7,8 +7,7 @@ use alloc::string::ToString;
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use linux_raw_sys::general::{
-    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECTORY,
-    O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
+    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT, O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY
 };
 
 use crate::{
@@ -47,6 +46,9 @@ fn flags_to_options(flags: c_int, _mode: __kernel_mode_t) -> OpenOptions {
     if flags & O_DIRECTORY != 0 {
         options.directory(true);
     }
+    if flags & O_DIRECT != 0 {
+        options.direct(true);
+    }
     options
 }
 
@@ -63,7 +65,7 @@ pub fn sys_openat(
     mode: __kernel_mode_t,
 ) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    let opts = flags_to_options(flags, mode);
+    let opts: OpenOptions = flags_to_options(flags, mode);
     debug!("sys_openat <= {} {} {:?}", dirfd, path, opts);
 
     let dir = if path.starts_with('/') || dirfd == AT_FDCWD {

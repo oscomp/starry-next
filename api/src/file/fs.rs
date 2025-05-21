@@ -6,20 +6,25 @@ use axfs::fops::DirEntry;
 use axio::PollState;
 use axsync::{Mutex, MutexGuard};
 use linux_raw_sys::general::S_IFDIR;
+use axio::SeekFrom;
 
-use super::{FileLike, Kstat, get_file_like};
+
+use super::{get_file_like, page_cache::FilePageCache, FileLike, Kstat};
 
 /// File wrapper for `axfs::fops::File`.
 pub struct File {
-    inner: Mutex<axfs::fops::File>,
+    inner: Arc<Mutex<axfs::fops::File>>,
     path: String,
+    page_cache: Mutex<FilePageCache>,
 }
 
 impl File {
     pub fn new(inner: axfs::fops::File, path: String) -> Self {
+        let file = Arc::new(Mutex::new(inner));
         Self {
-            inner: Mutex::new(inner),
+            inner: file.clone(),
             path,
+            page_cache: Mutex::new(FilePageCache::new(file.clone())),
         }
     }
 
@@ -36,11 +41,27 @@ impl File {
 
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
-        Ok(self.inner().read(buf)?)
+        let (is_direct, offset) = {
+            let mut inner = self.inner();
+            (inner.is_direct, inner.seek(SeekFrom::Current(0))?)
+        };
+        if is_direct {
+            return Ok(self.inner().read(buf)?);
+        }
+        let mut cache = self.page_cache.lock();
+        cache.read(offset as usize, buf)
     }
 
     fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
-        Ok(self.inner().write(buf)?)
+        let (is_direct, offset) = {
+            let mut inner = self.inner();
+            (inner.is_direct, inner.seek(SeekFrom::Current(0))?)
+        };
+        if is_direct {
+            return Ok(self.inner().write(buf)?);
+        }
+        let mut cache = self.page_cache.lock();
+        cache.write(offset as usize, buf)
     }
 
     fn stat(&self) -> LinuxResult<Kstat> {
