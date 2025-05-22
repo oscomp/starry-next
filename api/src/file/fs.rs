@@ -16,16 +16,21 @@ pub struct File {
     inner: Arc<Mutex<axfs::fops::File>>,
     path: String,
     page_cache: Mutex<FilePageCache>,
+    is_direct: bool,
 }
 
 impl File {
     pub fn new(inner: axfs::fops::File, path: String) -> Self {
+        let direct = inner.is_direct();
+        // let direct = true;
         let file = Arc::new(Mutex::new(inner));
-        Self {
+        let res = File {
             inner: file.clone(),
             path,
             page_cache: Mutex::new(FilePageCache::new(file.clone())),
-        }
+            is_direct: direct,
+        };
+        res
     }
 
     /// Get the path of the file.
@@ -37,45 +42,66 @@ impl File {
     pub fn inner(&self) -> MutexGuard<axfs::fops::File> {
         self.inner.lock()
     }
+
+    pub fn page_cache(&self) -> MutexGuard<FilePageCache> {
+        self.page_cache.lock()
+    }
+
+    pub fn seek(&self, pos: SeekFrom) -> LinuxResult<isize> {
+        if self.is_direct {
+            self.inner().seek(pos);
+            return Ok(0)
+        }
+        let mut cache = self.page_cache.lock();
+        cache.seek(pos)
+    }
+
+    pub fn fsync(&self) -> LinuxResult<isize> {
+        if self.is_direct {
+            return Ok(0);
+        }
+        let mut cache = self.page_cache.lock();
+        cache.flush()
+    }
 }
 
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
-        let (is_direct, offset) = {
-            let mut inner = self.inner();
-            (inner.is_direct, inner.seek(SeekFrom::Current(0))?)
-        };
-        if is_direct {
+        if self.is_direct {
             return Ok(self.inner().read(buf)?);
         }
         let mut cache = self.page_cache.lock();
-        cache.read(offset as usize, buf)
+        cache.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
-        let (is_direct, offset) = {
-            let mut inner = self.inner();
-            (inner.is_direct, inner.seek(SeekFrom::Current(0))?)
-        };
-        if is_direct {
-            return Ok(self.inner().write(buf)?);
+        if self.is_direct {
+            let length = self.inner().write(buf)?;
+            // error!("file size: {}, buflen {}, writelen {}", self.inner().get_attr().unwrap().size(), buf.len(), length);
+            return Ok(length);
+            // return Ok(self.inner().write(buf)?);
         }
         let mut cache = self.page_cache.lock();
-        cache.write(offset as usize, buf)
+        cache.write(buf)
     }
 
     fn stat(&self) -> LinuxResult<Kstat> {
-        let metadata = self.inner().get_attr()?;
-        let ty = metadata.file_type() as u8;
-        let perm = metadata.perm().bits() as u32;
+        if self.is_direct {
+            let metadata = self.inner().get_attr()?;
+            let ty = metadata.file_type() as u8;
+            let perm = metadata.perm().bits() as u32;
+    
+            return Ok(Kstat {
+                mode: ((ty as u32) << 12) | perm,
+                size: metadata.size(),
+                blocks: metadata.blocks(),
+                blksize: 512,
+                ..Default::default()
+            })
+        }
 
-        Ok(Kstat {
-            mode: ((ty as u32) << 12) | perm,
-            size: metadata.size(),
-            blocks: metadata.blocks(),
-            blksize: 512,
-            ..Default::default()
-        })
+        let mut cache = self.page_cache.lock();
+        cache.stat()
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
