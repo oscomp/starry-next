@@ -111,6 +111,7 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::munmap => sys_munmap(tf.arg0(), tf.arg1() as _),
         Sysno::mprotect => sys_mprotect(tf.arg0(), tf.arg1() as _, tf.arg2() as _),
+        Sysno::msync => sys_msync(tf.arg0(), tf.arg1() as _, tf.arg2() as _),
 
         // task info
         Sysno::getpid => sys_getpid(),
