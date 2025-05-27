@@ -1,16 +1,12 @@
-use core::clone;
-
-use alloc::{collections::{btree_map::BTreeMap, btree_set::BTreeSet, linked_list::LinkedList}, string::String, sync::{Arc, Weak}, vec::{self, Vec}};
-use axfs::api::File;
+use alloc::{collections::{btree_map::BTreeMap, btree_set::BTreeSet}, string::String, sync::Arc, vec::Vec};
 use axio::SeekFrom;
 use axsync::{Mutex, MutexGuard};
-use linux_raw_sys::general::FD_CLOEXEC;
 use spin::{rwlock::RwLock, Lazy, RwLockReadGuard};
 use axalloc::GlobalPage;
 use axerrno::LinuxResult;
-use memory_addr::{PhysAddr, VirtAddr, PAGE_SIZE_4K};
+use memory_addr::{VirtAddr, PAGE_SIZE_4K};
 use super::Kstat;
-use hashbrown::{hash_map::HashMap, HashSet};
+use hashbrown::hash_map::HashMap;
 use axerrno::ax_err_type;
 
 struct FilePage {
@@ -59,8 +55,13 @@ pub fn get_page_cache(path: &String) -> Option<Arc<FilePageCache>> {
 }
 
 pub fn try_close_page_cache(fd: i32) {
-    let mut manager = page_cache_manager();
-    manager.try_close_page_cache(fd);
+    let cache = {
+        let mut manager = page_cache_manager();
+        manager.try_close_page_cache(fd)
+    };
+    if let Some(cache) = cache {
+        cache.clear();
+    }
 }
 
 impl PageCacheManager {
@@ -99,37 +100,32 @@ impl PageCacheManager {
         None
     }
 
-    pub fn try_close_page_cache(&mut self, fd: i32) {
-        if let Some(path) = self.paths.remove(&fd) {
-            let cnt = self.open_cnt.get_mut(&path).unwrap();
-            *cnt -= 1;
-    
-            if *cnt == 0 {
-                let id = {
-                    let page_cache_id = &self.page_cache_id;  // 不可变借用 self.page_cache_id
-                    *page_cache_id.get(&path).unwrap()
-                };
-                self.open_cnt.remove(&path);
-                self.page_cache_id.remove(&path);
-                self.page_cache_ptr.remove(&id);
-            }
+    pub fn try_close_page_cache(&mut self, fd: i32) -> Option<Arc<FilePageCache>> {
+        let path = if let Some(path) = self.paths.get(&fd) {
+            path.clone()
+        } else {
+            return None;
+        };
+        let cnt = self.open_cnt.get_mut(&path).unwrap();
+        *cnt -= 1;
+
+        if *cnt == 0 {
+            let id = {
+                let page_cache_id = &self.page_cache_id;
+                *page_cache_id.get(&path).unwrap()
+            };
+            let page_cache = {
+                let page_cache_ptr = &self.page_cache_ptr;
+                page_cache_ptr.get(&id).cloned()
+            };
+            self.open_cnt.remove(&path);
+            self.paths.remove(&fd);
+            self.page_cache_id.remove(&path);
+            self.page_cache_ptr.remove(&id);
+            return page_cache;
         }
+        None
     }
-
-    // pub fn try_close_page_cache_by_path(&mut self, path: &String) {
-    //     if !self.open_cnt.contains_key(path) {
-    //         return;
-    //     }
-    //     let cnt = self.open_cnt.get_mut(path).unwrap();
-    //     *cnt -= 1;
-    //     if cnt == 0 {
-
-    //     }
-    //     if let Some(id) = self.page_cache_id.remove(path) {
-    //         self.page_cache_ptr.remove(&id);
-    //         self.fds.remove(path);
-    //     }
-    // }
 
     pub fn resize(&mut self, size: usize) {
         // TODO: 检查 size 的合法范围
@@ -149,7 +145,7 @@ impl PageCacheManager {
             let page = page.read();
             page.inner.start_vaddr()
         };
-        warn!("Kernel Page Pool alloc page: {:#x}", addr);
+        info!("Kernel Page Pool alloc page: {:#x}", addr);
         self.pages.insert(addr, page);
         addr
     }
@@ -177,8 +173,15 @@ impl PageCacheManager {
 
     // TODO: 完善页面置换算法，目前只是把虚拟地址最低的页面给扔掉
     fn find_page_drop(&mut self) -> VirtAddr {
-        let (&vaddr, _) = self.pages.first_key_value().unwrap();
-        vaddr
+        // let (&vaddr, _) = self.pages.first_key_value().unwrap();
+        // vaddr
+
+        if let Some((vaddr, &_)) = self.pages.iter().min_by_key(|&(_, v)| v.read().page_id) {
+            return *vaddr;
+        } else {
+            // panic("drop failed");
+            return VirtAddr::from_usize(0);
+        };
     }
     
     /// TODO: 通过页表检查是否为脏页，只有脏页才需写回
@@ -189,16 +192,15 @@ impl PageCacheManager {
             let page = page.read();
             (page.page_cache_id, page.page_id)
         };
-        warn!("KernelPagePool drop page: vaddr {:#x}, page_cache_id {}, page_id {}",
-            vaddr, page_cache_id, page_id);
         let page_cache = self.page_cache_ptr.get(&page_cache_id).unwrap();
-        page_cache.drop_page(page_id, page.read());
+        page_cache.drop_page(page_id, page.read()).unwrap();
         self.dealloc_page(vaddr);
-        warn!("KernelPagePool drop page: vaddr {:#x}", vaddr);
+        warn!("Kernel drop page: vaddr {:#x}, cache_id {}, page_id {}",
+            vaddr, page_cache_id, page_id);
     }
 }
 
-const DEFAULT_PAGE_POOL_SIZE: usize = 5;
+const DEFAULT_PAGE_POOL_SIZE: usize = 10;
 pub static PAGE_CACHE_MANAGER: Lazy<Mutex<PageCacheManager>> = Lazy::new(|| {Mutex::new(
     PageCacheManager::new(DEFAULT_PAGE_POOL_SIZE)
 )});
@@ -206,7 +208,7 @@ pub static PAGE_CACHE_MANAGER: Lazy<Mutex<PageCacheManager>> = Lazy::new(|| {Mut
 pub fn page_cache_manager() -> MutexGuard<'static, PageCacheManager> {
     PAGE_CACHE_MANAGER.lock()
 }
-/// 接管 syscall 层对 axfs::fops::File 的操作
+/// 功能：接管 syscall 层对 axfs::fops::File 的操作
 /// 包括 read, write, seek, stat，还需要实现同步落盘机制
 pub struct FilePageCache {
     id: RwLock<usize>,
@@ -264,20 +266,20 @@ impl FilePageCache {
 
         let vaddr = {
             // 从 manager 里面申请一个页面，并插入自己的数据结构
-            /// 这一条调用链极其容易发生死锁：
-            ///     FilePageCache::get_page 
-            ///  => PageCacheManager::alloc_page 
-            ///  => PageCacheManager::drop_page
-            ///  => FilePageCache::flush_page
+            // 这一条调用链极其容易发生死锁：
+            //     FilePageCache::get_page 
+            //  => PageCacheManager::alloc_page 
+            //  => PageCacheManager::drop_page
+            //  => FilePageCache::flush_page
 
             let vaddr = {
                 let id = self.id.read();
                 manager.alloc_page(*id, page_id)
             };
 
-            /// 这样的写法是同时兼顾两个目的：
-            /// 1. 避免一个隐蔽的并发 bug：防止在等待写锁期间其他进程已经创建了该页面
-            /// 2. 避免死锁：若先上写锁，再尝试 manager.get_page，有概率在页面置换时发生死锁
+            // 这样的写法是同时兼顾两个目的：
+            // 1. 避免一个隐蔽的并发 bug：防止在等待写锁期间其他进程已经创建了该页面
+            // 2. 避免死锁：若先上写锁，再尝试 manager.get_page，有概率在页面置换时发生死锁
             
             let mut pages = self.pages.write();
             if let Some(&start_addr) = pages.get(&page_id) {
@@ -297,17 +299,13 @@ impl FilePageCache {
             let mut len = 0;
             file.seek(SeekFrom::Start((page_id * PAGE_SIZE_4K) as u64)).unwrap();
             loop {
-                let offset = (page_id * PAGE_SIZE_4K) as u64;
                 let buf = &mut page.inner.as_slice_mut()[len..];
                 let add = match file.read(buf) {
-                    Ok(add) => add,
-                    Err(e) => {
+                    Ok(add) if add != 0 => add,
+                    _ => {
                         break;
                     }
                 };
-                if add == 0 {
-                    break;
-                }
                 len = len + add;
             }
         }
@@ -342,6 +340,8 @@ impl FilePageCache {
     }
     
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> LinuxResult<usize> {
+        debug!("FilePageCache::read_at: offset = {}, buf.len() = {}", offset, buf.len());
+
         let file_len = {
             let stat = self.stat.read();
             stat.size as usize
@@ -382,7 +382,7 @@ impl FilePageCache {
     }
 
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> LinuxResult<usize> {
-        error!("FilePageCache::write_at: offset = {}, buf.len() = {}", offset, buf.len());
+        debug!("FilePageCache::write_at: offset = {}, buf.len() = {}", offset, buf.len());
         
         let mut ret = 0;
         let write_len = buf.len();
@@ -451,6 +451,11 @@ impl FilePageCache {
     }
 
     fn flush_page(&self, page_id: usize) -> LinuxResult<isize> {        
+        // TODO: 现有的 fatfs 不完善，会一律返回可读写。需要改成检查页面是否为脏页
+        if !self.file.lock().get_attr()?.perm().contains(axfs::fops::FilePerm::OWNER_WRITE) {
+            return Ok(0);
+        }
+        
         let page_exists = {
             let pages = self.pages.read();
             pages.contains_key(&page_id)
@@ -476,6 +481,8 @@ impl FilePageCache {
         if length == 0 {
             return Ok(0);
         }
+
+        // TODO 读取的页面，不要写回！
         
         let mut file = self.file.lock();
         file.seek(SeekFrom::Start((page_id * PAGE_SIZE_4K) as u64))?;
@@ -530,18 +537,20 @@ impl FilePageCache {
         Ok(0)
     }
 
-    fn update_metadata(&self) {
+    fn update_metadata(&self) -> LinuxResult<isize> {
         // 更新文件大小
         let stat = { self.stat.read() };
         let mut file = self.file.lock();
-        file.truncate(stat.size);
-        error!("FilePageCache: update file size to {}", stat.size);
-
+        file.truncate(stat.size)?;
+        
         // 更新文件指针
         let offset = { self.offset.read().clone() };
         let pos = SeekFrom::Start(offset as u64);
-        file.seek(pos);
+        file.seek(pos)?;
+
+        info!("Update File Metadata size {}, offset {}", stat.size, offset);
         // TODO: 不知道还有没有其他信息需要更新
+        Ok(0)
     }
     
     pub fn fsync(&self) -> LinuxResult<isize> {
@@ -556,29 +565,36 @@ impl FilePageCache {
             let mut dirty_pages = self.dirty_pages.write();
             dirty_pages.clear();
         }
-        self.update_metadata();
+        self.update_metadata()?;
         Ok(0)
     }
 
     pub fn msync(&self) -> LinuxResult<isize> {
+        // 只读的文件，不要写回
+        // TODO: 现有的 fatfs 不完善，会一律返回可读写。需要改成检查页面是否为脏页
+        if !self.file.lock().get_attr()?.perm().contains(axfs::fops::FilePerm::OWNER_WRITE) {
+            return Ok(0);
+        }
+        
         let page_ids: Vec<usize> = {
             let pages = self.pages.read();
             pages.keys().copied().collect()
         };
         for page_id in page_ids {
-            self.flush_page(page_id)?;
+            // 这里因为 fatfs get_attr 的问题，导致可能抛出错误，暂时忽略
+            self.flush_page(page_id);   
         }
         {
             let mut dirty_pages = self.dirty_pages.write();
             dirty_pages.clear();
         }
-        self.update_metadata();
+        self.update_metadata()?;
         Ok(0)
     }
 
     pub fn clear(&self) -> LinuxResult<isize> {
-        self.msync()?;
-        
+        // TODO: 由于刷新机制不完善，这里可能抛出异常，暂时忽略
+        self.msync();
         let mut pool = page_cache_manager();
         let page_addrs: Vec<VirtAddr> = {
             let pages = self.pages.read();

@@ -13,7 +13,7 @@ use axsync::Mutex;
 
 use crate::{
     file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like, 
-        FilePageCache, open_page_cache, try_close_page_cache},
+        open_page_cache, try_close_page_cache},
     path::handle_file_path,
     ptr::UserConstPtr,
 };

@@ -9,7 +9,7 @@ use linux_raw_sys::general::S_IFDIR;
 use axio::SeekFrom;
 
 
-use super::{get_file_like, page_cache::{FilePageCache, get_page_cache,page_cache_manager}, FileLike, Kstat};
+use super::{get_file_like, page_cache::{FilePageCache, page_cache_manager}, FileLike, Kstat};
 
 /// File wrapper for `axfs::fops::File`.
 pub struct File {
@@ -98,14 +98,12 @@ impl FileLike for File {
     }
 
     fn stat(&self) -> LinuxResult<Kstat> {
-        /// 先尝试从缓存中获取文件属性，如果没有缓存则直接获取文件属性
+        // 先尝试从缓存中获取文件属性，如果没有缓存则直接获取文件属性
         if !self.is_direct {
             if let Some(cache) = self.try_cache() {
-                error!("stat use page cache");
                 return cache.stat();
             }
         }
-        error!("stat don't use page cache");
         let metadata = self.inner().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;
@@ -134,17 +132,6 @@ impl FileLike for File {
         Ok(())
     }
 }
-
-// impl Drop for File {
-//     fn drop(&mut self) {
-//         warn!("Drop file: path = {}, direct = {}", self.path, self.is_direct);
-//         if !self.is_direct {
-//             self.cache.clear();
-//             let mut manager = page_cache_manager();
-//             manager.unregister_file_page_cache(self.page_cache_id);
-//         }
-//     }
-// }
 
 /// Directory wrapper for `axfs::fops::Directory`.
 pub struct Directory {

@@ -1,5 +1,5 @@
 use axhal::{
-    mem::{PhysAddr, VirtAddr},
+    mem::VirtAddr,
     paging::MappingFlags,
     trap::{register_trap_handler, PAGE_FAULT},
 };
@@ -26,13 +26,20 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
         return true;
     }
     
-    if let Some((fd, start)) = aspace.get_file_metadata(vaddr) {
-        let file = File::from_fd(fd).unwrap();
-        let tmp_addr = file.cache().get_vaddr(vaddr - start);
-        let paddr = axhal::mem::virt_to_phys(tmp_addr);
-        warn!("Mmap page fault: fd = {}, start = {:#x}, vaddr = {:#x}, paddr = {:#x}", fd, start, vaddr, paddr);
-        aspace.force_map_page(vaddr, paddr, access_flags);
-        return true;
+    if let Some((fd, offset, shared, populate, start)) = aspace.get_file_metadata(vaddr) {
+        match File::from_fd(fd) {
+            Ok(file) => {
+                let page_virt_addr = file.cache().get_vaddr(vaddr - start);
+                let page_phys_addr = axhal::mem::virt_to_phys(page_virt_addr);
+                warn!("Mmap page fault: fd = {}, start = {:#x}, vaddr = {:#x}, paddr = {:#x}", fd, start, vaddr, page_phys_addr);
+                aspace.force_map_page(vaddr, page_phys_addr, access_flags);
+                return true;
+            },
+            _ => {
+                // TODO: 处理 shared
+                panic!("Failed to get file from fd: {}", fd);
+            }
+        } 
     }
     
     warn!(
@@ -42,5 +49,4 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
         vaddr
     );
     do_exit(SIGSEGV as _, true);
-    false
 }

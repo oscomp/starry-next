@@ -1,4 +1,3 @@
-use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
@@ -91,10 +90,6 @@ pub fn sys_mmap(
         return Err(LinuxError::EINVAL);
     }
 
-    info!(
-        "sys_mmap: addr: {:x?}, length: {:x?}, prot: {:?}, flags: {:?}, fd: {:?}, offset: {:?}",
-        addr, length, permission_flags, map_flags, fd, offset
-    );
 
     let start = memory_addr::align_down_4k(addr);
     let end = memory_addr::align_up_4k(addr + length);
@@ -146,14 +141,14 @@ pub fn sys_mmap(
         aspace.map_file(start_addr, aligned_length, permission_flags.into(), fd, offset as usize, shared, populate)?;
     }
 
-    error!("mmap: start_addr = {:#x}, length = {:#x}, fd = {}, offset = {:#x}",
+    info!("mmap: start_addr = {:#x}, length = {:#x}, fd = {}, offset = {:#x}",
         start_addr, aligned_length, fd, offset);
 
     return Ok(start_addr.as_usize() as _);
 }
 
 pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
-    sys_msync(addr, length, 0);
+    sys_msync(addr, length, 0)?;
 
     let curr = current();
     let process_data = curr.task_ext().process_data();
@@ -195,10 +190,10 @@ pub fn sys_msync(addr: usize, length: usize, flags: isize) -> LinuxResult<isize>
     let curr = current();
     
     let mut aspace = curr.task_ext().process_data().aspace.lock();
-    if let Some((fd, start)) = aspace.get_file_metadata(VirtAddr::from_usize(addr)) {
+    if let Some((fd, .. )) = aspace.get_file_metadata(VirtAddr::from_usize(addr)) {
         let file = File::from_fd(fd)?;
         let mut page_cache = file.cache();
-        page_cache.msync();
+        page_cache.msync()?;
         return Ok(0);
     }
     
