@@ -9,7 +9,7 @@
 
 #define FILE_SIZE (1UL << 15)
 #define BUFFER_SIZE (1 << 13)
-#define ROUND 1             // 测试轮次
+#define ROUND 1000             // 测试轮次
 #define TEST_SIZE  (FILE_SIZE * ROUND)
 #define FILENAME "testfile.bin"
 
