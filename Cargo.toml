@@ -37,6 +37,7 @@ axtask = { git = "https://github.com/oscomp/arceos.git" }
 
 axprocess = { git = "https://github.com/Starry-OS/axprocess.git" }
 axsignal = { git = "https://github.com/Starry-OS/axsignal.git", rev = "b5b6089" }
+axalloc = { git = "https://github.com/oscomp/arceos.git" }
 
 axerrno = "0.1"
 bitflags = "2.6"
@@ -51,6 +52,7 @@ linux-raw-sys = { version = "0.9.3", default-features = false, features = [
 ] }
 memory_addr = "0.3"
 spin = "0.9"
+hashbrown = "0.15.3"
 
 starry-core = { path = "./core" }
 starry-api = { path = "./api" }
@@ -78,6 +80,7 @@ axtask.workspace = true
 
 axprocess.workspace = true
 axsignal.workspace = true
+axalloc.workspace = true
 
 axerrno.workspace = true
 linkme.workspace = true

@@ -107,6 +107,11 @@ pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResul
         2 => SeekFrom::End(offset as _),
         _ => return Err(LinuxError::EINVAL),
     };
-    let off = File::from_fd(fd)?.inner().seek(pos)?;
-    Ok(off as _)
+    File::from_fd(fd)?.seek(pos)
+}
+
+
+pub fn sys_fsync(fd: c_int) -> LinuxResult<isize> {
+    let file = File::from_fd(fd)?;
+    file.fsync()
 }

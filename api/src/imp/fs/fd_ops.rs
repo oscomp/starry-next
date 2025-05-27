@@ -1,18 +1,19 @@
 use core::{
-    ffi::{c_char, c_int},
-    panic,
+    error, ffi::{c_char, c_int}, panic
 };
 
 use alloc::string::ToString;
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use linux_raw_sys::general::{
-    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECTORY,
-    O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
+    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT, O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY
 };
+use alloc::sync::Arc;
+use axsync::Mutex;
 
 use crate::{
-    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like},
+    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like, 
+        open_page_cache, try_close_page_cache},
     path::handle_file_path,
     ptr::UserConstPtr,
 };
@@ -47,6 +48,9 @@ fn flags_to_options(flags: c_int, _mode: __kernel_mode_t) -> OpenOptions {
     if flags & O_DIRECTORY != 0 {
         options.directory(true);
     }
+    if flags & O_DIRECT != 0 {
+        options.direct(true);
+    }
     options
 }
 
@@ -63,7 +67,7 @@ pub fn sys_openat(
     mode: __kernel_mode_t,
 ) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    let opts = flags_to_options(flags, mode);
+    let opts: OpenOptions = flags_to_options(flags, mode);
     debug!("sys_openat <= {} {} {:?}", dirfd, path, opts);
 
     let dir = if path.starts_with('/') || dirfd == AT_FDCWD {
@@ -80,9 +84,15 @@ pub fn sys_openat(
         ) {
             Err(AxError::IsADirectory) => {}
             r => {
-                let fd = File::new(r?, real_path.to_string()).add_to_fd_table()?;
+                let inner = r?;
+                let direct = inner.is_direct();
+                let inner = Arc::new(Mutex::new(inner));
+                let fd = File::new(inner.clone(), real_path.to_string()).add_to_fd_table()?;
+                if !direct {
+                    open_page_cache(&real_path.to_string(), fd, inner.clone());
+                }
                 return Ok(fd as _);
-            }
+            },
         }
     }
 
@@ -111,6 +121,7 @@ pub fn sys_open(
 
 pub fn sys_close(fd: c_int) -> LinuxResult<isize> {
     debug!("sys_close <= {}", fd);
+    try_close_page_cache(fd);
     close_file_like(fd)?;
     Ok(0)
 }
