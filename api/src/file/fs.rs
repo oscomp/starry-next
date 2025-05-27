@@ -6,20 +6,31 @@ use axfs::fops::DirEntry;
 use axio::PollState;
 use axsync::{Mutex, MutexGuard};
 use linux_raw_sys::general::S_IFDIR;
+use axio::SeekFrom;
 
-use super::{FileLike, Kstat, get_file_like};
+
+use super::{get_file_like, page_cache::{FilePageCache, page_cache_manager}, FileLike, Kstat};
 
 /// File wrapper for `axfs::fops::File`.
 pub struct File {
-    inner: Mutex<axfs::fops::File>,
+    inner: Arc<Mutex<axfs::fops::File>>,
     path: String,
+    is_direct: bool,
+    cache: Mutex<Option<Arc<FilePageCache>>>,  // 懒加载
 }
 
 impl File {
-    pub fn new(inner: axfs::fops::File, path: String) -> Self {
+    pub fn new(inner: Arc<Mutex<axfs::fops::File>>, path: String) -> Self {
+        let direct = {
+            let file = inner.clone();
+            let file = file.lock();
+            file.is_direct()
+        };
         Self {
-            inner: Mutex::new(inner),
-            path,
+            inner: inner,
+            path: path.clone(),
+            is_direct: direct,
+            cache: Mutex::new(None),
         }
     }
 
@@ -32,29 +43,78 @@ impl File {
     pub fn inner(&self) -> MutexGuard<axfs::fops::File> {
         self.inner.lock()
     }
+
+    fn try_cache(&self) -> Option<Arc<FilePageCache>> {
+        let mut cache = self.cache.lock();
+        if cache.is_none() {
+            let manager = page_cache_manager();
+            *cache = manager.get_page_cache(&self.path);
+        }
+        cache.as_ref().cloned()
+    }
+
+    pub fn cache(&self) -> Arc<FilePageCache> {
+        let mut cache = self.cache.lock();
+        if cache.is_none() {
+            let manager = page_cache_manager();
+            *cache = manager.get_page_cache(&self.path);
+        }
+        cache.as_ref().unwrap().clone()
+    }
+
+    pub fn seek(&self, pos: SeekFrom) -> LinuxResult<isize> {
+        if !self.is_direct {
+            let cache = self.cache();
+            return cache.seek(pos);
+        }
+        self.inner().seek(pos);
+        return Ok(0);
+    }
+
+    pub fn fsync(&self) -> LinuxResult<isize> {
+        if !self.is_direct {
+            let cache = self.cache();
+            cache.fsync();
+        }
+        return Ok(0);
+    }
 }
 
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
-        Ok(self.inner().read(buf)?)
+        if !self.is_direct {
+            let cache = self.cache();
+            return cache.read(buf);
+        }
+        return Ok(self.inner().read(buf)?);
     }
 
     fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
-        Ok(self.inner().write(buf)?)
+        if !self.is_direct {
+            let cache = self.cache();
+            return cache.write(buf);
+        }
+        return Ok(self.inner().write(buf)?);
     }
 
     fn stat(&self) -> LinuxResult<Kstat> {
+        // 先尝试从缓存中获取文件属性，如果没有缓存则直接获取文件属性
+        if !self.is_direct {
+            if let Some(cache) = self.try_cache() {
+                return cache.stat();
+            }
+        }
         let metadata = self.inner().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;
 
-        Ok(Kstat {
+        return Ok(Kstat {
             mode: ((ty as u32) << 12) | perm,
             size: metadata.size(),
             blocks: metadata.blocks(),
             blksize: 512,
             ..Default::default()
-        })
+        });
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
