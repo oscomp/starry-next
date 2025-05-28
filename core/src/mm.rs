@@ -1,17 +1,16 @@
+//! User address space management.
+
 use core::ffi::CStr;
 
-use alloc::{string::String, vec};
+use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 use axerrno::{AxError, AxResult};
-use axhal::{
-    paging::MappingFlags,
-    trap::{PAGE_FAULT, register_trap_handler},
-};
+use axhal::{mem::virt_to_phys, paging::MappingFlags};
 use axmm::{AddrSpace, kernel_aspace};
-use axtask::TaskExtRef;
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
 
+/// Creates a new empty user address space.
 pub fn new_user_aspace_empty() -> AxResult<AddrSpace> {
     AddrSpace::new_empty(
         VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
@@ -28,6 +27,18 @@ pub fn copy_from_kernel(aspace: &mut AddrSpace) -> AxResult {
         // kernel portion to the user page table.
         aspace.copy_mappings_from(&kernel_aspace().lock())?;
     }
+    Ok(())
+}
+
+/// Map the signal trampoline to the user address space.
+pub fn map_trampoline(aspace: &mut AddrSpace) -> AxResult {
+    let signal_trampoline_paddr = virt_to_phys(axsignal::arch::signal_trampoline_address().into());
+    aspace.map_linear(
+        axconfig::plat::SIGNAL_TRAMPOLINE.into(),
+        signal_trampoline_paddr,
+        PAGE_SIZE_4K,
+        MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
+    )?;
     Ok(())
 }
 
@@ -100,6 +111,18 @@ pub fn load_user_app(
         return Err(AxError::InvalidInput);
     }
     let file_data = axfs::api::read(args[0].as_str())?;
+    if file_data.starts_with(b"#!") {
+        let head = &file_data[2..file_data.len().min(256)];
+        let pos = head.iter().position(|c| *c == b'\n').unwrap_or(head.len());
+        let line = core::str::from_utf8(&head[..pos]).map_err(|_| AxError::InvalidData)?;
+
+        let new_args: Vec<String> = line
+            .splitn(2, |c: char| c.is_ascii_whitespace())
+            .map(|s| s.trim_ascii().to_owned())
+            .chain(args.iter().cloned())
+            .collect();
+        return load_user_app(uspace, &new_args, envs);
+    }
     let elf = ElfFile::new(&file_data).map_err(|_| AxError::InvalidData)?;
 
     if let Some(interp) = elf
@@ -184,28 +207,7 @@ pub fn access_user_memory<R>(f: impl FnOnce() -> R) -> R {
     })
 }
 
-#[register_trap_handler(PAGE_FAULT)]
-fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool) -> bool {
-    warn!(
-        "Page fault at {:#x}, access_flags: {:#x?}",
-        vaddr, access_flags
-    );
-    if !is_user && !ACCESSING_USER_MEM.read_current() {
-        return false;
-    }
-
-    if !axtask::current()
-        .task_ext()
-        .aspace
-        .lock()
-        .handle_page_fault(vaddr, access_flags)
-    {
-        warn!(
-            "{}: segmentation fault at {:#x}, exit!",
-            axtask::current().id_name(),
-            vaddr
-        );
-        axtask::exit(-1);
-    }
-    true
+/// Check if the current thread is accessing user memory.
+pub fn is_accessing_user_memory() -> bool {
+    ACCESSING_USER_MEM.read_current()
 }

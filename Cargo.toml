@@ -14,17 +14,12 @@ homepage = "https://github.com/arceos-org/arceos"
 repository = "https://github.com/arceos-org/starry-next"
 
 [workspace.dependencies]
-axfeat = { git = "https://github.com/oscomp/arceos.git" }
-arceos_posix_api = { git = "https://github.com/oscomp/arceos.git", features = [
-    "uspace",
-    "smp",
-    "irq",
+axfeat = { git = "https://github.com/oscomp/arceos.git", features = [
     "fs",
+    "irq",
     "multitask",
     "net",
-    "pipe",
-    "select",
-    "epoll",
+    "smp",
 ] }
 
 axconfig = { git = "https://github.com/oscomp/arceos.git" }
@@ -32,16 +27,30 @@ axfs = { git = "https://github.com/oscomp/arceos.git" }
 axhal = { git = "https://github.com/oscomp/arceos.git", features = ["uspace"] }
 axlog = { git = "https://github.com/oscomp/arceos.git" }
 axmm = { git = "https://github.com/oscomp/arceos.git" }
+axnet = { git = "https://github.com/oscomp/arceos.git" }
 axns = { git = "https://github.com/oscomp/arceos.git", features = [
     "thread-local",
 ] }
+axruntime = { git = "https://github.com/oscomp/arceos.git" }
 axsync = { git = "https://github.com/oscomp/arceos.git" }
 axtask = { git = "https://github.com/oscomp/arceos.git" }
 
+axprocess = { git = "https://github.com/Starry-OS/axprocess.git" }
+axsignal = { git = "https://github.com/Starry-OS/axsignal.git", rev = "b5b6089" }
+
 axerrno = "0.1"
 bitflags = "2.6"
+cfg-if = "1.0"
 linkme = "0.3"
+linux-raw-sys = { version = "0.9.3", default-features = false, features = [
+    "no_std",
+    "general",
+    "net",
+    "prctl",
+    "system",
+] }
 memory_addr = "0.3"
+spin = "0.9"
 
 starry-core = { path = "./core" }
 starry-api = { path = "./api" }
@@ -60,16 +69,24 @@ lwext4_rs = ["axfeat/lwext4_rs"]
 [dependencies]
 axfeat.workspace = true
 
+axfs.workspace = true
 axhal.workspace = true
 axlog.workspace = true
+axruntime.workspace = true
+axsync.workspace = true
 axtask.workspace = true
+
+axprocess.workspace = true
+axsignal.workspace = true
 
 axerrno.workspace = true
 linkme.workspace = true
+linux-raw-sys.workspace = true
 
 starry-core.workspace = true
 starry-api.workspace = true
 
+shlex = { version = "1.3.0", default-features = false }
 syscalls = { git = "https://github.com/jasonwhite/syscalls.git", rev = "92624de", default-features = false }
 
 [patch.crates-io]
