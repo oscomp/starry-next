@@ -207,6 +207,11 @@ pub fn sys_link(
     sys_linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0)
 }
 
+#[cfg(target_arch = "x86_64")]
+pub fn sys_unlink(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
+    sys_unlinkat(AT_FDCWD, path, 0)
+}
+
 /// remove link of specific file (can be used to delete file)
 /// dir_fd: the directory of link to be removed
 /// path: the name of link to be removed

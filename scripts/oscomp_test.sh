@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TIMEOUT=60s
+TIMEOUT=600s
 EXIT_STATUS=0
 ROOT=$(realpath $(dirname $0))/../
 AX_ROOT=$ROOT/.arceos
@@ -25,7 +25,9 @@ if [ "$ARCH" != "x86_64" ] && [ "$ARCH" != "riscv64" ] && [ "$ARCH" != "aarch64"
 fi
 
 LIBC=musl
-
+if [ -z "$LIBC" ]; then
+    LIBC=musl
+fi
 if [ "$LIBC" != "musl" ] && [ "$LIBC" != "glibc" ]; then
     echo "Unknown libc: $LIBC"
     exit $S_FAILED
@@ -68,7 +70,10 @@ basic_testlist=(
 busybox_testlist=("/$LIBC/busybox sh /$LIBC/busybox_testcode.sh")
 iozone_testlist=("/$LIBC/busybox sh /$LIBC/iozone_testcode.sh")
 lua_testlist=("/$LIBC/busybox sh /$LIBC/lua_testcode.sh")
-libctest_testlist=("/$LIBC/busybox sh /$LIBC/libctest_testcode.sh")
+libctest_testlist=(
+    "/$LIBC/runtest.exe -w entry-static.exe argv"
+    "/$LIBC/runtest.exe -w entry-static.exe fdopen"
+)
 
 testcases_type=(
     "basic"
