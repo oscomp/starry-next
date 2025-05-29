@@ -1265,6 +1265,7 @@ dependencies = [
  "linux-raw-sys",
  "memory_addr",
  "num_enum",
+ "page_table_multiarch",
  "spin",
  "starry-core",
  "x86",

@@ -4,6 +4,7 @@ use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
+use page_table_multiarch::PageSize;
 use starry_core::mm::access_user_memory;
 
 fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> LinuxResult<()> {
@@ -24,7 +25,7 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
 
     let page_start = start.align_down_4k();
     let page_end = (start + layout.size()).align_up_4k();
-    aspace.populate_area(page_start, page_end - page_start)?;
+    aspace.populate_area(page_start, page_end - page_start, PageSize::Size4K)?;
 
     Ok(())
 }

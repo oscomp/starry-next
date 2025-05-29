@@ -32,6 +32,8 @@ spin.workspace = true
 
 starry-core.workspace = true
 
+page_table_multiarch.workspace = true
+
 axio = "0.1.1"
 ctor_bare = "0.2.1"
 flatten_objects = "0.2.3"
