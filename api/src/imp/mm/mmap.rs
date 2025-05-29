@@ -1,12 +1,14 @@
 use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
+use axmm::{PAGE_SIZE_1G, PAGE_SIZE_2M};
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
-    MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
-    PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE,
+    MAP_ANONYMOUS, MAP_FIXED, MAP_HUGE_1GB, MAP_HUGE_MASK, MAP_HUGE_SHIFT, MAP_HUGETLB,
+    MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC, PROT_GROWSDOWN, PROT_GROWSUP,
+    PROT_READ, PROT_WRITE,
 };
-use memory_addr::{VirtAddr, VirtAddrRange};
+use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
 
 use crate::file::{File, FileLike};
 
@@ -82,13 +84,26 @@ pub fn sys_mmap(
     // An example is the flags contained none of MAP_PRIVATE, MAP_SHARED, or MAP_SHARED_VALIDATE.
     let map_flags = MmapFlags::from_bits_truncate(flags);
 
+    // The check uses bitwise operations to
+    // verify that exactly one of the two mutually exclusive mapping flags is set
+    if (map_flags.bits() & (MAP_PRIVATE | MAP_SHARED)).count_ones() != 1 {
+        return Err(LinuxError::EINVAL);
+    }
+
     info!(
         "sys_mmap: addr: {:x?}, length: {:x?}, prot: {:?}, flags: {:?}, fd: {:?}, offset: {:?}",
         addr, length, permission_flags, map_flags, fd, offset
     );
 
-    let start = memory_addr::align_down_4k(addr);
-    let end = memory_addr::align_up_4k(addr + length);
+    let (map_huge, page_size) = match (flags & MAP_HUGETLB, flags & MAP_HUGE_MASK << MAP_HUGE_SHIFT)
+    {
+        (0, _) => (false, PAGE_SIZE_4K),
+        (_, MAP_HUGE_1GB) => (true, PAGE_SIZE_1G),
+        (_, _) => (true, PAGE_SIZE_2M),
+    };
+
+    let start = addr.align_down(page_size);
+    let end = (addr + length).align_up(page_size);
     let aligned_length = end - start;
     debug!(
         "start: {:x?}, end: {:x?}, aligned_length: {:x?}",
@@ -103,18 +118,35 @@ pub fn sys_mmap(
         aspace.unmap(dst_addr, aligned_length)?;
         dst_addr
     } else {
-        aspace
-            .find_free_area(
-                VirtAddr::from(start),
-                aligned_length,
-                VirtAddrRange::new(aspace.base(), aspace.end()),
-            )
-            .or(aspace.find_free_area(
-                aspace.base(),
-                aligned_length,
-                VirtAddrRange::new(aspace.base(), aspace.end()),
-            ))
-            .ok_or(LinuxError::ENOMEM)?
+        if map_huge {
+            aspace
+                .find_free_area_with_align(
+                    VirtAddr::from(start).align_up(page_size),
+                    aligned_length,
+                    VirtAddrRange::new(aspace.base(), aspace.end()),
+                    page_size,
+                )
+                .or(aspace.find_free_area_with_align(
+                    aspace.base().align_up(page_size),
+                    aligned_length,
+                    VirtAddrRange::new(aspace.base(), aspace.end()),
+                    page_size,
+                ))
+                .ok_or(LinuxError::ENOMEM)?
+        } else {
+            aspace
+                .find_free_area(
+                    VirtAddr::from(start).align_up(page_size),
+                    aligned_length,
+                    VirtAddrRange::new(aspace.base(), aspace.end()),
+                )
+                .or(aspace.find_free_area(
+                    aspace.base().align_up(page_size),
+                    aligned_length,
+                    VirtAddrRange::new(aspace.base(), aspace.end()),
+                ))
+                .ok_or(LinuxError::ENOMEM)?
+        }
     };
 
     let populate = if fd == -1 {
@@ -128,6 +160,7 @@ pub fn sys_mmap(
         aligned_length,
         permission_flags.into(),
         populate,
+        page_size,
     )?;
 
     if populate {
@@ -150,7 +183,6 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let curr = current();
     let process_data = curr.task_ext().process_data();
     let mut aspace = process_data.aspace.lock();
-    let length = memory_addr::align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
     aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
