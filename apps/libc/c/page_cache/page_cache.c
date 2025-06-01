@@ -7,11 +7,9 @@
 #include <sys/stat.h>
 #include <assert.h>
 
-#define FILE_SIZE (1UL << 15)
-#define BUFFER_SIZE (1 << 13)
-#define ROUND 1000             // 测试轮次
-#define TEST_SIZE  (FILE_SIZE * ROUND)
 #define FILENAME "testfile.bin"
+
+const int PAGE_SIZE = 4096;
 
 // 获取当前时间（秒精度浮点数）
 double get_time() {
@@ -20,73 +18,75 @@ double get_time() {
     return tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-void test(int use_page_cache) {
-    int fd;
-    char *buffer;
-    ssize_t ret;
+void test(int use_page_cache, size_t file_size, int round) {
     double start, end;
-    size_t total = 0;
+    double total_size = file_size * round;
 
-    // 分配对齐的内存缓冲区（提升性能）
-    buffer = (char *)malloc(BUFFER_SIZE);
-    memset(buffer, 0xAA, BUFFER_SIZE);  // 填充测试数据
+    // 确保缓冲区大小对齐
+    // // 写入的内容
+    // char *a = (char *)malloc((file_size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE);
+    // // 读取的内容
+    // char *b = (char *)malloc((file_size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE);
+    char *a = malloc(file_size);
+    char *b = malloc(file_size);
+    
+    for (int i = 0; i < file_size; i++) {
+        a[i] = rand() % 15;
+    }
 
-    // ================== 写入测试 ==================
+    // 打开文件
     int flag = O_WRONLY|O_CREAT|O_TRUNC;
-
     if (use_page_cache == 0) {
         flag |= O_DIRECT;
     }
-    if ((fd = open(FILENAME, flag, 0644)) < 0) {
+    int fd = open(FILENAME, flag, 0644);
+    if (fd < 0) {
         perror("文件创建失败");
         exit(EXIT_FAILURE);
     }
 
+    // 重复 n 轮写入数据
     start = get_time();
-
-    for (int i = 0; i < ROUND; i++) {
-        // printf("round %d\n", i);
-        for (total = 0; total < FILE_SIZE; total += ret) {
-            size_t remaining = FILE_SIZE - total;
-            size_t chunk = (remaining > BUFFER_SIZE) ? BUFFER_SIZE : remaining;
-            
-            ret = write(fd, buffer, chunk);
-            if (ret < 0) {
+    for (int i = 0; i < round; i++) {
+        lseek(fd, 0, SEEK_SET);
+        size_t cur = 0;
+        while (cur < file_size) {
+            ssize_t add = write(fd, a + cur, file_size - cur); // 从 a+cur 写入
+            if (add <= 0) { // 修正5：处理错误
                 perror("写入失败");
                 close(fd);
                 exit(EXIT_FAILURE);
             }
+            cur += add;
         }
-        assert(total == FILE_SIZE);
-        lseek(fd, 0, SEEK_SET);
     }
-    
-    fsync(fd);  // 确保数据落盘
     end = get_time();
-    
-    // ================== 关闭文件前后大小测试 ==================
-    struct stat file_stat;
+    printf("[写入] 大小: %.2f MB, 耗时: %.2f s, 速度: %.2f MB/s\n",
+           total_size / (1024.0 * 1024), end - start, total_size / (end - start) / (1024 * 1024));
     
     // 关闭文件前获取文件大小，此时应该从 page cache 中读取
+    struct stat file_stat;
+    off_t stat_size;
     stat(FILENAME, &file_stat);
-    off_t file_size = file_stat.st_size;
-    // printf("文件大小: %ld, 理应 %ld\n", file_size, FILE_SIZE);
-    assert(use_page_cache == 0 || file_size == FILE_SIZE);
+    stat_size = file_stat.st_size;
+    if (stat_size != file_size && use_page_cache == 1) {
+        printf("(close 前) 文件大小: %ld, 理应 %ld\n", stat_size, file_size);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
     
+    // 关闭文件
     close(fd);
     
     // 关闭文件后获取文件大小，此时应该从磁盘读取
     stat(FILENAME, &file_stat);
-    file_size = file_stat.st_size;
-    // printf("文件大小: %ld, 理应 %ld\n", file_size, FILE_SIZE);
-    assert(file_size == FILE_SIZE);
+    stat_size = file_stat.st_size;
+    if (stat_size != file_size) {
+        printf("(close 后) 文件大小: %ld, 理应 %ld\n", stat_size, file_size);
+        exit(EXIT_FAILURE);
+    }
 
-    printf("[写入] 大小: %.2f MB, 耗时: %.2f s, 速度: %.2f MB/s\n",
-           TEST_SIZE / (1024.0 * 1024),
-           end - start,
-           TEST_SIZE / (end - start) / (1024 * 1024));
-    // ================== 读取测试 ==================
-    
+    // 重新打开文件
     flag = O_RDONLY;
     if (use_page_cache == 0) {
         flag |= O_DIRECT;
@@ -95,37 +95,49 @@ void test(int use_page_cache) {
         perror("文件打开失败");
         exit(EXIT_FAILURE);
     }
+
+    // 重复 n 轮读取数据
     start = get_time();
-    
-    for (int i = 0; i < ROUND; i++) {
-        while ((ret = read(fd, buffer, BUFFER_SIZE))) {
-            if (ret < 0) {
+    for (int i = 0; i < round; i++) {
+        lseek(fd, 0, SEEK_SET);
+        ssize_t cur = 0;
+        while (cur < file_size) {
+            ssize_t add = read(fd, b + cur, file_size - cur); // 读到 b+cur
+            if (add <= 0) { // 修正5：处理错误
                 perror("读取失败");
                 close(fd);
                 exit(EXIT_FAILURE);
             }
-            total += ret;
+            cur += add;
         }
-        lseek(fd, 0, SEEK_SET);
     }
     close(fd);
     end = get_time();
-
     printf("[读取] 大小: %.2f MB, 耗时: %.2f s, 速度: %.2f MB/s\n",
-           TEST_SIZE / (1024.0 * 1024),
-           end - start,
-           TEST_SIZE / (end - start) / (1024 * 1024));
+        total_size / (1024.0 * 1024), end - start, total_size / (end - start) / (1024 * 1024));
+
+    // 验证读写的内容一样
+    for (int i = 0; i < file_size; i++) {
+        // printf(" a[%d] = %d, b[%d] = %d\n", i, a[i], i, b[i]);
+        if (a[i] != b[i]) {
+            printf("读写内容不一致, a[%d] = %d, b[%d] = %d\n", i, a[i], i, b[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
 
     // 清理
     unlink(FILENAME);
-    free(buffer);
+    free(a);
+    free(b);
 }
 
 int main() {
     printf("使用 page cache：\n");
-    test(1);
-
+    test(1, 123452, 2);
+    
     printf("关闭 page cache，直接 io：\n");
-    test(0);
+    test(0, 513, 1);
+
+    printf("SUCCESS PAGE CACHE TEST!\n");
     return 0;
 }

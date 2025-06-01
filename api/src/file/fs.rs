@@ -1,6 +1,6 @@
 use core::{any::Any, ffi::c_int};
 
-use alloc::{string::String, sync::Arc};
+use alloc::{string::String, sync::{Arc, Weak}};
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::DirEntry;
 use axio::PollState;
@@ -9,18 +9,18 @@ use linux_raw_sys::general::S_IFDIR;
 use axio::SeekFrom;
 
 
-use super::{get_file_like, page_cache::{FilePageCache, page_cache_manager}, FileLike, Kstat};
+use super::{get_file_like, page_cache::{PageCache, page_cache_manager}, FileLike, Kstat};
 
 /// File wrapper for `axfs::fops::File`.
 pub struct File {
     inner: Arc<Mutex<axfs::fops::File>>,
     path: String,
     is_direct: bool,
-    cache: Mutex<Option<Arc<FilePageCache>>>,  // 懒加载
+    cache: Weak<PageCache>,
 }
 
 impl File {
-    pub fn new(inner: Arc<Mutex<axfs::fops::File>>, path: String) -> Self {
+    pub fn new(inner: Arc<Mutex<axfs::fops::File>>, path: String, cache: Weak<PageCache>) -> Self {
         let direct = {
             let file = inner.clone();
             let file = file.lock();
@@ -30,8 +30,12 @@ impl File {
             inner: inner,
             path: path.clone(),
             is_direct: direct,
-            cache: Mutex::new(None),
+            cache,
         }
+    }
+
+    pub fn set_cache(&mut self, cache: Weak<PageCache>) {
+        self.cache = cache;
     }
 
     /// Get the path of the file.
@@ -44,37 +48,38 @@ impl File {
         self.inner.lock()
     }
 
-    fn try_cache(&self) -> Option<Arc<FilePageCache>> {
-        let mut cache = self.cache.lock();
-        if cache.is_none() {
-            let manager = page_cache_manager();
-            *cache = manager.get_page_cache(&self.path);
+    // 主要问题在于 fstat，在没有 open 的情况下仍然会以 direct 创建 struct File，此时并没有 cache
+    fn try_get_cache(&self) -> Option<Arc<PageCache>> {
+        if let Some(cache) = self.cache.upgrade() {
+            return Some(cache);
         }
-        cache.as_ref().cloned()
+        let manager = page_cache_manager();
+        if let Some(weak_cache) = manager.get_page_cache(&self.path) {
+            if let Some(cache) = weak_cache.upgrade() {
+                return Some(cache);
+            }
+        }
+        return None;
     }
 
-    pub fn cache(&self) -> Arc<FilePageCache> {
-        let mut cache = self.cache.lock();
-        if cache.is_none() {
-            let manager = page_cache_manager();
-            *cache = manager.get_page_cache(&self.path);
-        }
-        cache.as_ref().unwrap().clone()
+
+    fn get_cache(&self) -> Arc<PageCache> {
+        self.cache.upgrade().unwrap()
     }
 
     pub fn seek(&self, pos: SeekFrom) -> LinuxResult<isize> {
         if !self.is_direct {
-            let cache = self.cache();
+            let cache = self.get_cache();
             return cache.seek(pos);
         }
-        self.inner().seek(pos);
-        return Ok(0);
+        self.inner().seek(pos)?;
+        Ok(0)
     }
 
     pub fn fsync(&self) -> LinuxResult<isize> {
         if !self.is_direct {
-            let cache = self.cache();
-            cache.fsync();
+            let cache = self.get_cache();
+            cache.sync(false)?;
         }
         return Ok(0);
     }
@@ -83,7 +88,7 @@ impl File {
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
         if !self.is_direct {
-            let cache = self.cache();
+            let cache = self.get_cache();
             return cache.read(buf);
         }
         return Ok(self.inner().read(buf)?);
@@ -91,7 +96,7 @@ impl FileLike for File {
 
     fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
         if !self.is_direct {
-            let cache = self.cache();
+            let cache = self.get_cache();
             return cache.write(buf);
         }
         return Ok(self.inner().write(buf)?);
@@ -100,10 +105,11 @@ impl FileLike for File {
     fn stat(&self) -> LinuxResult<Kstat> {
         // 先尝试从缓存中获取文件属性，如果没有缓存则直接获取文件属性
         if !self.is_direct {
-            if let Some(cache) = self.try_cache() {
+            if let Some(cache) = self.try_get_cache() {
                 return cache.stat();
             }
         }
+
         let metadata = self.inner().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;

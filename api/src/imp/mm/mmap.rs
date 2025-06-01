@@ -7,7 +7,7 @@ use linux_raw_sys::general::{
 };
 use memory_addr::{VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
 
-use crate::file::{File, FileLike};
+use crate::file::{File, FileLike, mmap_area_manager};
 
 bitflags::bitflags! {
     /// `PROT_*` flags for use with [`sys_mmap`].
@@ -94,7 +94,6 @@ pub fn sys_mmap(
     let start = memory_addr::align_down_4k(addr);
     let end = memory_addr::align_up_4k(addr + length);
     let aligned_length = end - start;
-    let aligned_offset = memory_addr::align_down_4k(offset);
     debug!(
         "start: {:x?}, end: {:x?}, aligned_length: {:x?}",
         start, end, aligned_length
@@ -130,15 +129,18 @@ pub fn sys_mmap(
     if anonymous {
         if shared {
             // TODO: 匿名共享 => 共享内存
-            aspace.map_shm(start_addr, aligned_length, permission_flags.into(), populate)?;
+            panic!("Shared memory not implemented");
         } else {
             // 匿名私有 => 功能等同 malloc
             aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate)?;
         }
     } else {
         // 文件读写
-        let file = File::from_fd(fd)?;
-        aspace.map_file(start_addr, aligned_length, permission_flags.into(), fd, offset as usize, shared, populate)?;
+        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;
+        let manager = mmap_area_manager();
+        let curr = current();
+        let pid = curr.task_ext().thread.process().pid();
+        manager.mmap(pid, start_addr, length, fd, offset);
     }
 
     info!("mmap: start_addr = {:#x}, length = {:#x}, fd = {}, offset = {:#x}",
@@ -155,6 +157,11 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let mut aspace = process_data.aspace.lock();
     let length = memory_addr::align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
+
+    let manager = mmap_area_manager();
+    let curr = current();
+    let pid = curr.task_ext().thread.process().pid();
+    manager.munmap(pid, start_addr);
 
     aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
@@ -181,22 +188,16 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: u32) -> LinuxResult<isize>
     Ok(0)
 }
 
-pub fn sys_msync(addr: usize, length: usize, flags: isize) -> LinuxResult<isize> {
-    if addr % PAGE_SIZE_4K != 0 {
+pub fn sys_msync(start: usize, length: usize, _flags: isize) -> LinuxResult<isize> {
+    // TODO: implement flags
+    
+    if start % PAGE_SIZE_4K != 0 {
         return Err(LinuxError::EINVAL);
     }
     
     let length = memory_addr::align_up_4k(length);
+    let manager = mmap_area_manager();
     let curr = current();
-    
-    let mut aspace = curr.task_ext().process_data().aspace.lock();
-    if let Some((fd, .. )) = aspace.get_file_metadata(VirtAddr::from_usize(addr)) {
-        let file = File::from_fd(fd)?;
-        let mut page_cache = file.cache();
-        page_cache.msync()?;
-        return Ok(0);
-    }
-    
-    // 找不到文件不一定是错误，可能是匿名映射，似乎 mallco 也会调用 msync
-    Ok(0)
+    let pid = curr.task_ext().thread.process().pid();
+    manager.msync(pid, VirtAddr::from(start), length)
 }

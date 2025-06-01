@@ -76,5 +76,7 @@ int main() {
     close(fd);
     unlink(tmpfile);  // 删除临时文件
 
+    printf("mmap test SUCCESS\n");
+
     return EXIT_SUCCESS;
 }
