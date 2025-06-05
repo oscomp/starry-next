@@ -115,3 +115,11 @@ pub fn sys_fsync(fd: c_int) -> LinuxResult<isize> {
     let file = File::from_fd(fd)?;
     file.fsync()
 }
+
+pub fn sys_pread(fd: c_int, buf: UserPtr<u8>, count: usize, offset: u64) -> LinuxResult<isize> {
+    panic!("not implement");
+}
+
+pub fn sys_pwrite(fd: c_int, buf: UserConstPtr<u8>, count: usize, offset: u64) -> LinuxResult<isize> {
+    panic!("not implement");
+}

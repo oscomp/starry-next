@@ -6,8 +6,9 @@ use linux_raw_sys::general::{
     PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE,
 };
 use memory_addr::{VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
+use alloc::vec;
 
-use crate::file::{File, FileLike, mmap_area_manager};
+use crate::file::{page_cache_manager, File, FileLike};
 
 bitflags::bitflags! {
     /// `PROT_*` flags for use with [`sys_mmap`].
@@ -100,6 +101,7 @@ pub fn sys_mmap(
     );
 
     
+    // 分配虚拟地址段
     let start_addr = if map_flags.contains(MmapFlags::FIXED) {
         if start == 0 {
             return Err(LinuxError::EINVAL);
@@ -135,12 +137,28 @@ pub fn sys_mmap(
             aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate)?;
         }
     } else {
-        // 文件读写
-        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;
-        let manager = mmap_area_manager();
-        let curr = current();
-        let pid = curr.task_ext().thread.process().pid();
-        manager.mmap(pid, start_addr, length, fd, offset);
+        if shared {
+            // 共享文件映射：对接到 page cache
+            aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;            
+            let curr = current();
+            let manager = curr.task_ext().process_data().process_mmap_mnager();
+            manager.add_area(start_addr, length, fd, offset, shared)?;
+        } else {
+            // 私有文件映射，修改不会同步到文件
+            aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;
+
+            let file = File::from_fd(fd)?;
+            let file = file.inner();
+            let file_size = file.get_attr()?.size() as usize;
+            if offset < 0 || offset as usize >= file_size {
+                return Err(LinuxError::EINVAL);
+            }
+            let offset = offset as usize;
+            let length = core::cmp::min(length, file_size - offset);
+            let mut buf = vec![0u8; length];
+            file.read_at(offset as u64, &mut buf)?;
+            aspace.write(start_addr, &buf)?;
+        }
     }
 
     info!("mmap: start_addr = {:#x}, length = {:#x}, fd = {}, offset = {:#x}",
@@ -154,14 +172,13 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
 
     let curr = current();
     let process_data = curr.task_ext().process_data();
+    let start_addr = VirtAddr::from(addr);
+    let mmap_manager = process_data.process_mmap_mnager();
+
+    // TODO 只取消部分映射
+    mmap_manager.remove_area(start_addr)?;
     let mut aspace = process_data.aspace.lock();
     let length = memory_addr::align_up_4k(length);
-    let start_addr = VirtAddr::from(addr);
-
-    let manager = mmap_area_manager();
-    let curr = current();
-    let pid = curr.task_ext().thread.process().pid();
-    manager.munmap(pid, start_addr);
 
     aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
@@ -194,10 +211,18 @@ pub fn sys_msync(start: usize, length: usize, _flags: isize) -> LinuxResult<isiz
     if start % PAGE_SIZE_4K != 0 {
         return Err(LinuxError::EINVAL);
     }
-    
-    let length = memory_addr::align_up_4k(length);
-    let manager = mmap_area_manager();
+
     let curr = current();
-    let pid = curr.task_ext().thread.process().pid();
-    manager.msync(pid, VirtAddr::from(start), length)
+    let mmap_manager = curr.task_ext().process_data().process_mmap_mnager();
+    
+    if let Some(area) = mmap_manager.query(VirtAddr::from(start)) {
+        let cache_manager = page_cache_manager();
+        let cache = cache_manager.fd_cache(area.fd);
+        let start_page_id = start / PAGE_SIZE_4K;
+        let end_page_id = (start + length) / PAGE_SIZE_4K;
+        for page_id in start_page_id..end_page_id {
+            cache.flush_page(page_id)?;
+        }
+    }
+    Ok(0)
 }

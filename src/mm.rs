@@ -5,7 +5,7 @@ use axhal::{
 };
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::SIGSEGV;
-use starry_api::{do_exit, file::mmap_area_manager};
+use starry_api::{do_exit, file::page_cache_manager};
 use starry_core::mm::is_accessing_user_memory;
 
 #[register_trap_handler(PAGE_FAULT)]
@@ -18,17 +18,18 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
         return false;
     }
 
-    let curr = current();
-    let mut aspace = curr.task_ext().process_data().aspace.lock();
-
-    // 检查是否为文件映射
-    let pid = curr.task_ext().thread.process().pid();
-    let mmap_manager = mmap_area_manager();
-    if let Some(paddr) = mmap_manager.find_paddr(pid, &vaddr) {
-        aspace.force_map_page(vaddr, paddr, access_flags);
-        return true;
+    if is_user {
+        let cache_manager = page_cache_manager();
+        if let Some(paddr) = cache_manager.try_mmap_lazy_init(vaddr) {
+            let curr = current();
+            let mut aspace = curr.task_ext().process_data().aspace.lock();
+            aspace.force_map_page(vaddr, paddr, access_flags);
+            return true;
+        }
     }
 
+    let curr = current();
+    let mut aspace = curr.task_ext().process_data().aspace.lock();
     if aspace.handle_page_fault(vaddr, access_flags) {
         return true;
     }

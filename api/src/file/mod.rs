@@ -18,7 +18,7 @@ pub use self::{
     fs::{Directory, File},
     net::Socket,
     pipe::Pipe,
-    page_cache::{page_cache_manager, mmap_area_manager},
+    page_cache::page_cache_manager,
 };
 
 pub const AX_FILE_LIMIT: usize = 1024;

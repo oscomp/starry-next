@@ -130,7 +130,7 @@ pub fn sys_open(
 pub fn sys_close(fd: c_int) -> LinuxResult<isize> {
     debug!("sys_close <= {}", fd);
     let manager = page_cache_manager();
-    manager.try_close_page_cache(fd);
+    manager.try_close_page_cache(fd)?;
     close_file_like(fd)?;
     Ok(0)
 }

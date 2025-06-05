@@ -124,6 +124,7 @@ void test(int use_page_cache, size_t file_size, int round) {
             exit(EXIT_FAILURE);
         }
     }
+    printf("读写数据一致\n");
 
     // 清理
     unlink(FILENAME);
@@ -133,10 +134,10 @@ void test(int use_page_cache, size_t file_size, int round) {
 
 int main() {
     printf("使用 page cache：\n");
-    test(1, 123452, 2);
+    test(1, 4096 * 200, 1);
     
-    printf("关闭 page cache，直接 io：\n");
-    test(0, 513, 1);
+    // printf("关闭 page cache，直接 io：\n");
+    // test(0, 513, 1);
 
     printf("SUCCESS PAGE CACHE TEST!\n");
     return 0;

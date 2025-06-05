@@ -1,14 +1,16 @@
 //! User address space management.
 
 use core::ffi::CStr;
+use axerrno::{LinuxError, LinuxResult};
 
-use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
+use alloc::{borrow::ToOwned, string::String, vec, vec::Vec, collections::btree_map::BTreeMap};
 use axerrno::{AxError, AxResult};
 use axhal::{mem::virt_to_phys, paging::MappingFlags};
 use axmm::{AddrSpace, kernel_aspace};
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
+use axsync::Mutex;
 
 /// Creates a new empty user address space.
 pub fn new_user_aspace_empty() -> AxResult<AddrSpace> {
@@ -136,20 +138,22 @@ pub fn load_user_app(
 
         let mut interp_path = axfs::api::canonicalize(
             CStr::from_bytes_with_nul(interp)
-                .map_err(|_| AxError::InvalidData)?
-                .to_str()
-                .map_err(|_| AxError::InvalidData)?,
+            .map_err(|_| AxError::InvalidData)?
+            .to_str()
+            .map_err(|_| AxError::InvalidData)?,
         )?;
-
+        
         if interp_path == "/lib/ld-linux-riscv64-lp64.so.1"
-            || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
-            || interp_path == "/lib64/ld-linux-x86-64.so.2"
-            || interp_path == "/lib/ld-linux-aarch64.so.1"
+        || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
+        || interp_path == "/lib64/ld-linux-x86-64.so.2"
+        || interp_path == "/lib/ld-linux-aarch64.so.1"
+        || interp_path == "/lib/ld-musl-riscv64.so.1"
+        
         {
             // TODO: Use soft link
             interp_path = String::from("/musl/lib/libc.so");
         }
-
+        
         // Set the first argument to the path of the user app.
         let mut new_args = vec![interp_path];
         new_args.extend_from_slice(args);
@@ -210,4 +214,52 @@ pub fn access_user_memory<R>(f: impl FnOnce() -> R) -> R {
 /// Check if the current thread is accessing user memory.
 pub fn is_accessing_user_memory() -> bool {
     ACCESSING_USER_MEM.read_current()
+}
+
+/// 描述一个虚拟地址段
+#[derive(Clone)]
+pub struct MmapArea {
+    pub start: VirtAddr,
+    pub length: usize,
+    pub fd: i32,        // fd == -1 表示匿名映射
+    pub offset: usize,
+    pub shared: bool,
+}
+/// 仅维护共享文件映射！
+/// 这些区间一定是不相交的
+pub struct ProcessMmapManager {
+    areas: Mutex<BTreeMap<VirtAddr, MmapArea>>,
+}
+
+impl ProcessMmapManager {
+    pub fn new() -> Self {
+        Self {
+            areas: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn add_area(&self, start: VirtAddr, length: usize, fd: i32, offset: usize, shared: bool) -> LinuxResult<isize> {
+        let mut areas = self.areas.lock();
+        if length == 0 || start.as_usize() % PAGE_SIZE_4K != 0 || offset % PAGE_SIZE_4K != 0 {
+            return Err(LinuxError::EINVAL);
+        }
+        areas.insert(start, MmapArea { start: start, length, fd, offset, shared });
+        Ok(0)
+    }
+    
+    pub fn remove_area(&self, start: VirtAddr) -> LinuxResult<isize> {
+        let mut areas = self.areas.lock();
+        areas.remove(&start);
+        Ok(0)
+    }
+    
+    pub fn query(&self, vaddr: VirtAddr) -> Option<MmapArea> {
+        let areas = self.areas.lock();
+        if let Some((&start, area)) = areas.range(..=vaddr).next_back() {
+            if vaddr >= start && vaddr.as_usize() < start.as_usize() + area.length {
+                return Some(area.clone());
+            }
+        }
+        None
+    }
 }
