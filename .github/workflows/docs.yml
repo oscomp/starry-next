@@ -3,7 +3,7 @@ name: Build & Deploy docs
 on: [push, pull_request]
 
 env:
-  rust-toolchain: nightly-2025-01-18
+  rust-toolchain: nightly-2025-05-20
 
 jobs:
   doc:
@@ -20,9 +20,12 @@ jobs:
       with:
         toolchain: ${{ env.rust-toolchain }}
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
-    - uses: ./.github/workflows/actions/setup-musl
+    - uses: arceos-org/setup-musl@v1
       with:
         arch: x86_64
     - name: Build docs

@@ -2,13 +2,16 @@ name: CI
 
 on: [push, pull_request]
 
+env:
+  qemu-version: 9.2.4
+
 jobs:
   clippy:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        rust-toolchain: [nightly, nightly-2025-01-18]
+        rust-toolchain: [nightly, nightly-2025-05-20]
         arch: [x86_64, riscv64, aarch64, loongarch64]
     steps:
     - uses: actions/checkout@v4
@@ -21,18 +24,9 @@ jobs:
       run: ./scripts/get_deps.sh
     - name: Check rust version
       run: rustc --version --verbose
-    - uses: ./.github/workflows/actions/setup-musl
+    - uses: arceos-org/setup-musl@v1
       with:
-        arch: x86_64
-    - uses: ./.github/workflows/actions/setup-musl
-      with:
-        arch: riscv64
-    - uses: ./.github/workflows/actions/setup-musl
-      with:
-        arch: aarch64
-    - uses: ./.github/workflows/actions/setup-musl
-      with:
-        arch: loongarch64
+        arch: ${{ matrix.arch }}
     - name: Check code format
       continue-on-error: ${{ matrix.rust-toolchain == 'nightly' }}
       run: cargo fmt --all -- --check
@@ -47,7 +41,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly, nightly-2025-01-18]
+        rust-toolchain: [nightly, nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -56,9 +50,12 @@ jobs:
         components: rust-src, llvm-tools
         targets: x86_64-unknown-none, riscv64gc-unknown-none-elf, aarch64-unknown-none, aarch64-unknown-none-softfloat, loongarch64-unknown-none
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
-    - uses: ./.github/workflows/actions/setup-musl
+    - uses: arceos-org/setup-musl@v1
       with:
         arch: ${{ matrix.arch }}
     - name: Build for ${{ matrix.arch }}
@@ -72,9 +69,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly-2025-01-18]
-    env:
-      qemu-version: 9.2.1
+        rust-toolchain: [nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -82,14 +77,18 @@ jobs:
         toolchain: ${{ matrix.rust-toolchain }}
         components: rust-src, llvm-tools
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
-    - uses: ./.github/workflows/actions/setup-musl
+    - uses: arceos-org/setup-musl@v1
       with:
         arch: ${{ matrix.arch }}
-    - uses: ./.github/workflows/actions/setup-qemu
+    - uses: arceos-org/setup-qemu@v1
       with:
-        qemu-version: ${{ env.qemu-version }}
+        version: ${{ env.qemu-version }}
+        arch_list: x86_64,aarch64,riscv64,loongarch64
     - name: Build rustup target
       if: ${{ matrix.arch != 'riscv64' }}
       run: rustup target add ${{ matrix.arch }}-unknown-linux-musl
@@ -103,9 +102,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly-2025-01-18]
-    env:
-      qemu-version: 9.2.1
+        rust-toolchain: [nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -113,14 +110,18 @@ jobs:
         toolchain: ${{ matrix.rust-toolchain }}
         components: rust-src, llvm-tools
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
-    - uses: ./.github/workflows/actions/setup-musl
+    - uses: arceos-org/setup-musl@v1
       with:
         arch: ${{ matrix.arch }}
-    - uses: ./.github/workflows/actions/setup-qemu
+    - uses: arceos-org/setup-qemu@v1
       with:
-        qemu-version: ${{ env.qemu-version }}
+        version: ${{ env.qemu-version }}
+        arch_list: x86_64,aarch64,riscv64,loongarch64
     - uses: ./.github/workflows/actions/setup-testcases
       with:
         image-release-url: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.2

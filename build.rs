@@ -13,7 +13,7 @@ fn main() {
 fn link_app_data(arch: &str) -> Result<()> {
     let testcase = option_env!("AX_TESTCASE").unwrap_or("nimbos");
 
-    let app_path = PathBuf::from(format!("apps/{}/build/{}", testcase, arch));
+    let app_path = PathBuf::from(format!("apps/{testcase}/build/{arch}"));
     let link_app_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("link_app.S");
 
     if let Ok(dir) = read_dir(&app_path) {
@@ -35,8 +35,8 @@ _app_count:
             apps.len()
         )?;
         for i in 0..apps.len() {
-            writeln!(f, "    .quad app_{}_name", i)?;
-            writeln!(f, "    .quad app_{}_start", i)?;
+            writeln!(f, "    .quad app_{i}_name")?;
+            writeln!(f, "    .quad app_{i}_start")?;
         }
         writeln!(f, "    .quad app_{}_end", apps.len() - 1)?;
 
