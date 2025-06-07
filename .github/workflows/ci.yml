@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust-toolchain: [nightly, nightly-2025-01-18]
+        rust-toolchain: [nightly, nightly-2025-05-20]
         arch: [x86_64, riscv64, aarch64, loongarch64]
     steps:
     - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly, nightly-2025-01-18]
+        rust-toolchain: [nightly, nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -50,6 +50,9 @@ jobs:
         components: rust-src, llvm-tools
         targets: x86_64-unknown-none, riscv64gc-unknown-none-elf, aarch64-unknown-none, aarch64-unknown-none-softfloat, loongarch64-unknown-none
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
     - uses: arceos-org/setup-musl@v1
@@ -66,7 +69,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly-2025-01-18]
+        rust-toolchain: [nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -74,6 +77,9 @@ jobs:
         toolchain: ${{ matrix.rust-toolchain }}
         components: rust-src, llvm-tools
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
     - uses: arceos-org/setup-musl@v1
@@ -96,7 +102,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [x86_64, riscv64, aarch64, loongarch64]
-        rust-toolchain: [nightly-2025-01-18]
+        rust-toolchain: [nightly-2025-05-20]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
@@ -104,6 +110,9 @@ jobs:
         toolchain: ${{ matrix.rust-toolchain }}
         components: rust-src, llvm-tools
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: cargo-bin-cache
+        cache-targets: false
     - run: cargo install cargo-binutils
     - run: ./scripts/get_deps.sh
     - uses: arceos-org/setup-musl@v1
