@@ -251,6 +251,7 @@ dependencies = [
  "axsync",
  "cap_access",
  "cfg-if",
+ "fatfs",
  "lazyinit",
  "log",
  "lwext4_rust",
@@ -719,6 +720,15 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs?rev=85f06e0#85f06e08edbd3368e1b0562f2fc1b6d178bf7b8a"
+dependencies = [
+ "bitflags 2.9.0",
+ "log",
+]
 
 [[package]]
 name = "flatten_objects"

@@ -216,19 +216,21 @@ pub fn is_accessing_user_memory() -> bool {
     ACCESSING_USER_MEM.read_current()
 }
 
-/// 描述一个虚拟地址段
+/// 类似 Linux 的 struct VMA
 #[derive(Clone)]
-pub struct MmapArea {
+pub struct VirtMemArea {
     pub start: VirtAddr,
     pub length: usize,
-    pub fd: i32,        // fd == -1 表示匿名映射
+    pub fd: i32,            // fd == -1 表示匿名映射
     pub offset: usize,
     pub shared: bool,
 }
-/// 仅维护共享文件映射！
-/// 这些区间一定是不相交的
+/// 作用：
+///   1. 处理因 mmap lazy-alloc 产生的 page fault，根据虚拟地址找到对应的 Vitual Memory Area 信息
+///   2. 在页面置换时实现页表反向映射，根据虚拟地址找到对应的 Vitual Memory Area 信息
 pub struct ProcessMmapManager {
-    areas: Mutex<BTreeMap<VirtAddr, MmapArea>>,
+    // 这些区间一定是不相交的
+    areas: Mutex<BTreeMap<VirtAddr, VirtMemArea>>,
 }
 
 impl ProcessMmapManager {
@@ -243,17 +245,17 @@ impl ProcessMmapManager {
         if length == 0 || start.as_usize() % PAGE_SIZE_4K != 0 || offset % PAGE_SIZE_4K != 0 {
             return Err(LinuxError::EINVAL);
         }
-        areas.insert(start, MmapArea { start: start, length, fd, offset, shared });
+        areas.insert(start, VirtMemArea { start: start, length, fd, offset, shared });
         Ok(0)
     }
     
     pub fn remove_area(&self, start: VirtAddr) -> LinuxResult<isize> {
         let mut areas = self.areas.lock();
-        areas.remove(&start);
+        areas.remove(&start).unwrap();
         Ok(0)
     }
     
-    pub fn query(&self, vaddr: VirtAddr) -> Option<MmapArea> {
+    pub fn query(&self, vaddr: VirtAddr) -> Option<VirtMemArea> {
         let areas = self.areas.lock();
         if let Some((&start, area)) = areas.range(..=vaddr).next_back() {
             if vaddr >= start && vaddr.as_usize() < start.as_usize() + area.length {
