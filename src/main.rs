@@ -22,7 +22,6 @@ fn main() {
         .filter(|&x| !x.is_empty());
 
     for testcase in testcases {
-        error!("start run testcase: {}", testcase);
         let Some(args) = shlex::split(testcase) else {
             error!("Failed to parse testcase: {:?}", testcase);
             continue;
