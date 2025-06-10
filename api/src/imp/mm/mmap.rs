@@ -2,9 +2,10 @@ use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
-    MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC, PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE, QNX4_SUPER_MAGIC
+    MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE, MAP_SHARED,
+    MAP_STACK, PROT_EXEC, PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE
 };
-use memory_addr::{PhysAddr, VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
+use memory_addr::{VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
 use alloc::vec;
 
 use crate::file::{page_cache_manager, File, FileLike};
@@ -85,8 +86,8 @@ bitflags::bitflags! {
 /// 4. 对于 populate 映射，在sys_mmmap 时由 AddrSpace::map_alloc 直接建立页表映射。
 /// 
 /// ### 根据匿名/文件、私有/共享，主要有 4 种 mmap：
-/// 1. 匿名私有：功能等同 malloc，事实上 malloc 底层即调用这种类型的 mmap。
-/// 2. 匿名共享：功能等同于 Private 的共享内存，只能在父子进程之间共享。 TODO: 尚未实现。
+/// 1. 匿名私有：相当于 malloc
+/// 2. 匿名共享：相当于 Private 的共享内存，只能在父子进程之间共享。 TODO: 尚未实现。
 /// 3. 文件私有：仅将文件内容加载进内存，但是修改不会同步到文件。
 /// 4. 文件共享：对文件的修改会被同步，并且允许多个进程并发读写文件。底层会将不同进程的虚拟页面映射到同一个页缓存物理页面。
 pub fn sys_mmap(
@@ -102,9 +103,11 @@ pub fn sys_mmap(
     let mut aspace = process_data.aspace.lock();
     let permission_flags = MmapProt::from_bits_truncate(prot);
     
-    // TODO: check illegal flags for mmap
-    // An example is the flags contained none of MAP_PRIVATE, MAP_SHARED, or MAP_SHARED_VALIDATE.
     let map_flags = MmapFlags::from_bits_truncate(flags);
+    if !(map_flags.contains(MmapFlags::PRIVATE) ^ map_flags.contains(MmapFlags::SHARED)) {
+        error!("MAP FAILED: flags must contains one of SHARED or PRIVATE");
+        return Err(LinuxError::EINVAL);
+    }
     
     let offset = offset as usize;
     if offset % PAGE_SIZE_4K != 0 {
@@ -142,33 +145,46 @@ pub fn sys_mmap(
         start_addr, aligned_length, fd, offset);
 
     let anonymous = map_flags.contains(MmapFlags::ANONYMOUS) || fd == -1;
-    let shared = map_flags.contains(MmapFlags::SHARED);
+    let private = map_flags.contains(MmapFlags::PRIVATE);
     let fd = { if anonymous { -1 } else { fd } };
-    // 目前只有匿名映射能做到 populate
-    let populate =  anonymous && map_flags.contains(MmapFlags::POPULATE);
+    let populate =  map_flags.contains(MmapFlags::POPULATE);
 
     // 添加 VMA 信息到 process_mmap_manager 和 aspace，等访问页面时触发 page fault 后建立页表映射
     let curr = current();
     let manager = curr.task_ext().process_data().process_mmap_mnager();
-    manager.add_area(start_addr, length, fd, offset, shared)?;
-    aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate)?;     
-    
-    // 私有文件映射：
-    // - 仅从文件读取数据到内存，修改不会同步到文件，即之前版本的 starry-next mmap 实现。
-    // - 这里默认 populate，不会触发 page fault
-    if !anonymous && !shared {
-        let file = File::from_fd(fd)?;
-        let file = file.inner();
-        let file_size = file.get_attr()?.size() as usize;
-        if offset as usize >= file_size {
-            return Err(LinuxError::EINVAL);
+    manager.add_area(start_addr, length, fd, offset, !private)?;
+
+    if anonymous {
+        // 匿名映射
+        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate)?;
+
+        if !private {
+            panic!("Not implement");
         }
-        let offset = offset as usize;
-        let length = core::cmp::min(length, file_size - offset);
-        let mut buf = vec![0u8; length];
-        file.read_at(offset as u64, &mut buf)?;
-        aspace.write(start_addr, &buf)?;
-    }       
+    } else {
+        // 文件映射，在 aspace 里面都认为 populate == false，即不通过 aspace 分配页面
+        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;
+
+        if populate {
+            if private {
+                // 文件私有映射的 populate: 直接把文件内容加载进 aspace
+                let file = File::from_fd(fd)?;
+                let file_size = file.get_size() as usize;
+                if offset as usize >= file_size {
+                    return Err(LinuxError::EINVAL);
+                }
+                let offset = offset as usize;
+                let length = core::cmp::min(length, file_size - offset);
+                let mut buf = vec![0u8; length];
+                file.read_at(&mut buf, offset)?;
+                aspace.write(start_addr, &buf)?;
+            } else {
+                // 文件共享映射的 populate: 交由 page cache 完成加载
+                let cache_manager = page_cache_manager();
+                cache_manager.populate(fd, offset, length);
+            }
+        }
+    }
     
     return Ok(start_addr.as_usize() as _);
 }
@@ -186,27 +202,24 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
         error!("Invalid munmap area!");
         return Err(LinuxError::EINVAL);
     }
+    let area = area.unwrap();
+    if area.length != length {
+        error!("Invalid munmap length!");
+        return Err(LinuxError::EINVAL);
+    }
     mmap_manager.remove_area(VirtAddr::from(addr))?;
     
-    // 对于文件mmap，在缓存页中取消反向映射，但是这一步没有修改页表
-    let area = area.unwrap();
+    // 对于文件mmap，在缓存页中取消反向映射，修改页表
     if area.fd != -1 {
         assert!(addr % PAGE_SIZE_4K == 0);
         let cache_manager = page_cache_manager();
-        let cache = cache_manager.fd_cache(area.fd);
-        let start_page_id = (addr - area.start.as_usize()) / PAGE_SIZE_4K;
-        let end_page_id = (addr - area.start.as_usize() + length) / PAGE_SIZE_4K;
-        for page_id in start_page_id..end_page_id {
-            cache.unmap_virt_page(page_id, VirtAddr::from(addr + page_id * PAGE_SIZE_4K));
-        }
+        cache_manager.munmap(area.fd, area.offset, area.length, addr);
     }
     
-    // 在 aspace 中移除 VMA 并取消页表映射
+    // 在 aspace 中移除 VMA，匿名映射修改页表
     let mut aspace = process_data.aspace.lock();
     let length = memory_addr::align_up_4k(length);
-    // error!("before unmap \n{:#?}", aspace);
     aspace.unmap(VirtAddr::from(addr), length).unwrap();
-    error!("after unmap \n{:#?}", aspace);
     axhal::arch::flush_tlb(None);
     Ok(0)
 }
@@ -245,17 +258,16 @@ pub fn sys_msync(addr: usize, length: usize, _flags: isize) -> LinuxResult<isize
         return Err(LinuxError::EINVAL);
     }
     let area = area.unwrap();
+    if area.length < length {
+        error!("Invalid msync length");
+        return Err(LinuxError::EINVAL);
+    }
     if area.fd == -1 {
         return Ok(0);
     }
 
     let cache_manager = page_cache_manager();
-    let cache = cache_manager.fd_cache(area.fd);
-    let start_page_id = (addr - area.start.as_usize()) / PAGE_SIZE_4K;
-    let end_page_id = (addr - area.start.as_usize() + length) / PAGE_SIZE_4K;
-    for page_id in start_page_id..end_page_id {
-        cache.flush_page(page_id)?;
-    }
+    cache_manager.msync(area.fd, area.offset, length);
     Ok(0)
 }
 
@@ -265,12 +277,10 @@ pub fn lazy_map_file(vaddr: VirtAddr, access_flags: MappingFlags) -> bool {
     let mmap_manager = curr.task_ext().process_data().process_mmap_mnager();
     let area = mmap_manager.query(vaddr);
     
-    // 说明 page fatul 并非由 mmap lazy-alloc 引起。
-    // 开销仅有 mmap_manager 的一次 query。
+    // page fatul 并非由 mmap 引起，开销仅有 mmap_manager 的一次 query。
     if area.is_none() {
         return false;
     }
-
     // 匿名映射，应该会交给 AddrSpace::handle_page_fault 处理
     let area= area.unwrap();
     if area.fd == -1 {
@@ -280,6 +290,29 @@ pub fn lazy_map_file(vaddr: VirtAddr, access_flags: MappingFlags) -> bool {
     let offset = vaddr.as_usize() - area.start.as_usize();
     let page_id = offset / PAGE_SIZE_4K;
     let aligned_vaddr = VirtAddr::from(memory_addr::align_down_4k(vaddr.as_usize()));
+
+    if !area.shared {
+        let file = match File::from_fd(area.fd) {
+            Ok(f) => f,
+            _ => return false,
+        };
+        let file_size = file.get_size();
+        let length = core::cmp::min(PAGE_SIZE_4K, file_size - offset);
+        let mut buf = vec![0u8; length];
+        match file.read_at(&mut buf, offset) {
+            Ok(_) => (),
+            _ => return false,
+        }
+
+        let curr = current();
+        let process_data = curr.task_ext().process_data();
+        let aspace = process_data.aspace.lock();
+        match aspace.write(aligned_vaddr, &buf) {
+            Ok(_) => (),
+            _ => return false,
+        }
+        return true;
+    }
     
     let page_cache_manager = page_cache_manager();
     let cache = page_cache_manager.fd_cache(area.fd);

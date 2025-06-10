@@ -23,6 +23,18 @@ pub fn sys_read(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isize> {
     Ok(get_file_like(fd)?.read(buf)? as _)
 }
 
+pub fn sys_pread(fd: c_int, buf: UserPtr<u8>, len: usize, offset: usize) -> LinuxResult<isize> {
+    let buf = buf.get_as_mut_slice(len)?;
+    debug!(
+        "sys_read <= fd: {}, buf: {:p}, len: {}",
+        fd,
+        buf.as_ptr(),
+        buf.len()
+    );
+    let file = File::from_fd(fd)?;
+    Ok(file.read_at(buf, offset)? as _)
+}
+
 pub fn sys_readv(fd: i32, iov: UserPtr<iovec>, iocnt: usize) -> LinuxResult<isize> {
     if !(0..=1024).contains(&iocnt) {
         return Err(LinuxError::EINVAL);
@@ -68,6 +80,18 @@ pub fn sys_write(fd: i32, buf: UserConstPtr<u8>, len: usize) -> LinuxResult<isiz
     Ok(get_file_like(fd)?.write(buf)? as _)
 }
 
+pub fn sys_pwrite(fd: c_int, buf: UserConstPtr<u8>, len: usize, offset: usize) -> LinuxResult<isize> {
+    let buf = buf.get_as_slice(len)?;
+    debug!(
+        "sys_pwrite <= fd: {}, buf: {:p}, len: {}",
+        fd,
+        buf.as_ptr(),
+        buf.len()
+    );
+    let file = File::from_fd(fd)?;
+    Ok(file.write_at(buf, offset)? as _)
+}
+
 pub fn sys_writev(fd: i32, iov: UserConstPtr<iovec>, iocnt: usize) -> LinuxResult<isize> {
     if !(0..=1024).contains(&iocnt) {
         return Err(LinuxError::EINVAL);
@@ -99,6 +123,11 @@ pub fn sys_writev(fd: i32, iov: UserConstPtr<iovec>, iocnt: usize) -> LinuxResul
     Ok(ret)
 }
 
+pub fn sys_ftruncate(fd: c_int, offset: usize) -> LinuxResult<isize> {
+    let file = File::from_fd(fd)?;
+    Ok(file.truncate(offset)? as _)
+}
+
 pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResult<isize> {
     debug!("sys_lseek <= {} {} {}", fd, offset, whence);
     let pos = match whence {
@@ -113,13 +142,5 @@ pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResul
 
 pub fn sys_fsync(fd: c_int) -> LinuxResult<isize> {
     let file = File::from_fd(fd)?;
-    file.fsync()
-}
-
-pub fn sys_pread(fd: c_int, buf: UserPtr<u8>, count: usize, offset: u64) -> LinuxResult<isize> {
-    panic!("not implement");
-}
-
-pub fn sys_pwrite(fd: c_int, buf: UserConstPtr<u8>, count: usize, offset: u64) -> LinuxResult<isize> {
-    panic!("not implement");
+    Ok(file.fsync()? as _)
 }

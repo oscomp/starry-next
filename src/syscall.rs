@@ -57,6 +57,7 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         Sysno::fsync => sys_fsync(tf.arg0() as _),
         Sysno::pread64 => sys_pread(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _, tf.arg3() as _),
         Sysno::pwrite64 => sys_pwrite(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _, tf.arg3() as _),
+        Sysno::ftruncate => sys_ftruncate(tf.arg0() as _, tf.arg1() as _),
 
         // fs mount
         Sysno::mount => sys_mount(

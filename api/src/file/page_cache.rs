@@ -1,22 +1,21 @@
-use axhal::{console::read_bytes, paging::MappingFlags};
-use core::{error, isize, mem::ManuallyDrop, ops::DerefMut, sync::atomic::{AtomicI8, AtomicIsize}};
+use axhal::{paging::MappingFlags, arch::flush_tlb};
+use core::{isize, mem::ManuallyDrop, ops::DerefMut, sync::atomic::AtomicIsize};
 use axconfig::plat::PHYS_VIRT_OFFSET;
-use alloc::{boxed::Box, collections::{btree_map::BTreeMap, btree_set::BTreeSet, linked_list::LinkedList}, string::String, sync::{Arc, Weak}, vec, vec::Vec};
-use axhal::arch::flush_tlb;
+use alloc::{collections::{btree_map::BTreeMap, btree_set::BTreeSet, linked_list::LinkedList}, string::String, sync::{Arc, Weak}, vec, vec::Vec};
 use axio::SeekFrom;
 use axprocess::Pid;
 use axsync::Mutex;
-use spin::{rwlock::RwLock, RwLockReadGuard, RwLockWriteGuard};
+use spin::{rwlock::RwLock, RwLockWriteGuard};
 use axalloc::GlobalPage;
 use axerrno::{LinuxError, LinuxResult};
 use memory_addr::{PhysAddr, VirtAddr, PAGE_SIZE_4K};
 use super::Kstat;
-use hashbrown::hash_map::HashMap;
-use axerrno::ax_err_type;
 use lazy_static::lazy_static;
 use axtask::{TaskExtRef, current};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use starry_core::task::{get_process, ProcessData};
+use crate::file::{File, FileLike};
+use axfs::fops::OpenOptions;
 
 // GlobalAllocator 的性能并不高（似乎是 O(n)?），尽可能频繁避免申请释放 GlobalPage
 lazy_static! {
@@ -27,7 +26,7 @@ lazy_static! {
 /// 并发不安全，需要上层加读写锁。
 /// 
 /// 脏页管理机制：
-/// - 由 sys_write 等产生的脏页：特点是会调用 Page::write 操作，直接修改 Page 的 dirty 位即可。
+/// - 由 sys_write 等产生的脏页：特点是会调用 Page::write 操作，直接修改 Page 的 dirty 成员。
 /// - 由 mmap 后的内存访问产生的脏页：由于直接内存读写不会调用 Page::write，此时必须查询对应页表的
 /// 页表项脏位。mmap 后访问虚拟页面触发 page fault，此时通过 Page::map_virt_page 建立页表映射，并在
 /// virt_pages 里面添加对应的 pid 和 虚拟页号。查询脏位时，检查所有相关进程的页表。
@@ -66,14 +65,12 @@ impl Page {
         }
     }
     
-    /// 功能
-    /// 1. 初始化 file 和 page_id 字段，加载文件内容到 Page。
-    /// 2. 清除所有相关页表项的脏位标记。
+    /// 初始化 file 和 page_id 字段，加载文件内容，清空脏页标记。
     /// 
-    /// 注意
-    /// 1. 只有 Page::load 涉及 axfs 层的文件 read 操作。
-    /// 2. 一个 Page 只有 load 之后才能使用；
+    /// 注意：
+    /// - 只有 Page::load 涉及 axfs 层的文件 read 操作。
     fn load(&mut self, file: Weak<Mutex<axfs::fops::File>>, page_id: usize) {
+        debug!("ready load page {}", self.page_id);
         self.file = file.clone();
         self.page_id = page_id;
         let file_arc = file.upgrade().unwrap();
@@ -90,13 +87,11 @@ impl Page {
                 _ => break,
             }
         }
-
+        debug!("Load page {} done, length = {}, {:?}..", self.page_id, bytes_read, &buf[0..5]);
         self.set_clean();
     }
 
-    /// 功能：
-    /// 1. 将 Page 的内容刷新回文件，返回本页写回文件的大小
-    /// 2. 清除所有相关页表项的脏位标记。
+    /// 将 Page 的内容刷新回文件，清空脏页标记，返回本页写回文件的大小。
     /// 
     /// 注意：
     /// 1. 只有 Page::flush 涉及 axfs 层的文件 write 操作；
@@ -130,8 +125,8 @@ impl Page {
             }
         }
 
+        debug!("Flush page {} done, length = {}, {:?}..", self.page_id, bytes_write, &buf[0..5]);
         self.set_clean();
-        debug!("Flush page {} done, length = {}", self.page_id, bytes_write);
         Ok(bytes_write as isize)
     }
 
@@ -150,7 +145,7 @@ impl Page {
 
     /// 将 buf 中的数据写入到内存中的缓存页面，返回写入的长度，返回写入的长度
     /// 
-    /// 参数 direct: 是否直接同步到文件
+    /// 参数 direct: 是否直接同步到文件，主要用于 PageCache::fill_gap
     fn write(&mut self, offset: usize, buf: &[u8], direct: bool) -> LinuxResult<isize> {                
         debug!("write page {}, len {}, direct {}", self.page_id, buf.len(), direct);
         let start = offset;
@@ -186,7 +181,7 @@ impl Page {
             return true;
         }
         
-        let mut virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
+        let virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
         for (pid, vaddr) in virt_pages {
             match get_process(pid) {
                 Ok(process) => {
@@ -212,7 +207,7 @@ impl Page {
     fn set_clean(&mut self) {
         self.dirty = false;
         
-        let mut virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
+        let virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
         for (pid, vaddr) in virt_pages {
             match get_process(pid) {
                 Ok(process) => {
@@ -245,31 +240,38 @@ impl Page {
         let mut aspace = curr.task_ext().process_data().aspace.lock();
         let paddr = self.inner.start_paddr(axhal::mem::virt_to_phys);
         
-        warn!("Try force map page {}, page id {}, {:#x} => {:#x}", current().id_name(), 
-            self.page_id, aligned_virt_page, paddr);
+        debug!("Try force map page {}, {:#x} => {:#x}, {}",  
+            self.page_id, aligned_virt_page, paddr, current().id_name());
+        
+        // 这里先 flush，再 set_clean 的目的是：单纯修改页表也会导致页面被标记为脏页。    
+        match self.flush() {
+            Ok(_) => (),
+            _ => return false,
+        }
         if aspace.force_map_page(aligned_virt_page, paddr, access_flags) {
-            let mut virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
             self.virt_pages.insert((pid, aligned_virt_page));
+            drop(aspace);
+            self.set_clean();
             return true;
         }
         return false;
     }
 
     /// 功能：
-    /// - 取消当前进程的一个虚拟页到此 Page 的映射
+    /// - 取消当前进程的一个虚拟页到此 Page 的映射，修改页表
     /// 
     /// 注意：
-    /// - 这里没有修改页表！
-    /// - munmap 修改页表是在 aspace 中自动执行的
+    /// - 这里修改了页表，在 aspace 视角，这个页面始终是一个未分配的 unpopulate 页面
     /// - Drop Page 修改也表是在 drop 里面进行的
     fn unmap_virt_page(&mut self, aligned_virt_page: VirtAddr) {
-        let mut virt_pages: Vec<_> = self.virt_pages.iter().copied().collect();
-        let pid = {
-            let curr = current();
-            curr.task_ext().thread.process().pid()
-        };
+        let curr = current();
+        let pid = curr.task_ext().thread.process().pid();
         assert!(aligned_virt_page.as_usize() % PAGE_SIZE_4K == 0);
         self.virt_pages.remove(&(pid, aligned_virt_page));
+
+        let mut aspace = curr.task_ext().process_data().aspace.lock();
+        aspace.force_unmap_page(aligned_virt_page);
+        flush_tlb(Some(aligned_virt_page));
         debug!("unmap virt page {} ({}, {:#x})", self.page_id, pid, aligned_virt_page);
     }
 }
@@ -293,7 +295,7 @@ impl Drop for Page {
 
                     if let Some(_) = mmap_manager.query(vaddr) {
                         let mut aspace = process_data.aspace.lock();
-                        error!("force unmap {:#x}", vaddr);
+                        debug!("force unmap {:#x}", vaddr);
                         aspace.force_unmap_page(vaddr);
                     }
                 },
@@ -337,9 +339,7 @@ impl PagePool {
         }
     }
     
-    /// 功能：
-    /// - 调整 PagePool 的大小
-    /// 
+    /// 调整 PagePool 的大小。
     /// 暂时没用到，给以后留作扩展，例如根据内存使用情况，动态调整
     fn resize(&self, size: usize) {
         self.max_size.store(size, Ordering::SeqCst);
@@ -377,22 +377,18 @@ impl PagePool {
         (page, key)
     }
 
-    /// 功能：
-    /// - 根据 page_key 判断该页是否仍在 PagePool 中
+    /// 根据 page_key 判断该页是否仍在 PagePool 中
     fn check_page_exist(&self, page_key: &PageKey) -> bool {
         let pages = self.pages.read();
         pages.contains_key(page_key)
     }
 
-    /// 功能：
-    /// - 自动挑选一个 Page，Drop 它
+    /// 自动挑选一个 Page，Drop 它
     fn auto_drop_page(&self, pages: &mut RwLockWriteGuard<BTreeMap<PageKey, Arc<RwLock<Page>>>>) {        
         // 选择需要被丢弃的页面
         let key = {
             let mut clean_list = self.clean_list.lock();
             let mut dirty_list = self.dirty_list.lock();
-            // error!("clean: {}, dirty: {}, total: {}", clean_list.len(), dirty_list.len(), pages.len());
-            // assert!(clean_list.len() + dirty_list.len() == pages.len());
             
             let mut drop_key: Option<isize> = None;
             while !clean_list.is_empty() {
@@ -441,12 +437,16 @@ lazy_static! {
 
 /// 用于维护一个文件的页缓存，接管文件的基本操作
 pub struct PageCache {
+    // 对接的文件名
+    path: String,
     // axfs 层的 File 指针
-    file: Weak<Mutex<axfs::fops::File>>,
-    // 文件读写的位置指针
-    offset: AtomicUsize,  
+    file: Arc<Mutex<axfs::fops::File>>,
     // 文件大小
     size: AtomicUsize,
+    // 已占用的最大 page id
+    max_page_id: AtomicIsize,
+    // fill gap 预留的 最大 page od
+    reserved_page_id: AtomicIsize,
     // 使用的 PagePool
     page_pool: Arc<PagePool>,
     // 维护页面 -> PageKey 的缓存
@@ -456,64 +456,34 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    pub fn new(file: Weak<Mutex<axfs::fops::File>>) -> Self {        
-        let (offset, size) = {
-            let file = file.upgrade().expect("File has been dropped before PageCache creation");
-            let file_lock = file.lock(); // 获取文件锁
-            let offset = file_lock.get_offset() as usize;
-            let size = file_lock.get_attr().unwrap().size();
-            (offset, size)
+    pub fn new(path: String) -> Self {
+        warn!("Create Pagecache {}", path);
+        let opts = OpenOptions::new().set_read(true).set_write(true);
+        let file = axfs::fops::File::open(path.as_str(), &opts).unwrap();
+        let file = Arc::new(Mutex::new(file));
+        let size = {
+            let file = file.lock();
+            file.get_attr().unwrap().size()
+        };
+
+        let max_page_id = {
+            if size == 0 {
+                -1 as isize
+            } else {
+                (size as isize - 1) / PAGE_SIZE_4K as isize
+            }
         };
 
         Self {
+            path: path,
             file: file.clone(),
-            offset: AtomicUsize::new(offset),
             size: AtomicUsize::new(size as usize),
+            max_page_id: AtomicIsize::new(max_page_id),
+            reserved_page_id: AtomicIsize::new(max_page_id),
             page_pool: PAGE_POOL.clone(),
             pages: RwLock::new(BTreeMap::new()),
             dirty_pages: RwLock::new(BTreeSet::new()),
         }
-    }
-
-    /// 功能：
-    /// - 根据 page_id，获得 Page 的 Arc 指针
-    /// - 如果 PagePool 此时不存在，则新建一个 Page 并初始化
-    fn acquire_page(&self, page_id: usize) -> PagePtr {
-        let mut pages = self.pages.write();
-        let orig_key = pages.get(&page_id).cloned().unwrap_or(-1);
-        
-        let (page, new_key) = self.page_pool.acquire_page(orig_key);
-        if orig_key != new_key {
-            let mut page = page.write();
-            page.load(self.file.clone(), page_id);
-            pages.remove(&page_id);
-            pages.insert(page_id, new_key);
-        }
-        
-        page
-    }
-
-    /// 一种对页面操作的抽象：检查页号为 page_id 的页是否存在于 PagePool，
-    /// 若存在则执行操作 f
-    fn _with_valid_page<T, F>(&self, page_id: usize, f: F) -> bool
-    where
-        F: FnOnce(&mut Page) -> T,
-    {
-        {
-            let pages = self.pages.read();
-            if !pages.contains_key(&page_id) {
-                return false;
-            }
-            let page_key = pages.get(&page_id).unwrap();
-            if !self.page_pool.check_page_exist(page_key) {
-                return false;
-            }
-        }
-        
-        let rwlock = self.acquire_page(page_id);
-        let mut page = rwlock.write();
-        f(page.deref_mut());
-        true
     }
 
     /// 将当前进程的 aligned_vaddr 映射到文件的 page_id 页面
@@ -538,61 +508,13 @@ impl PageCache {
         Ok(0)
     }
 
-    /// 读取页面 page_id，从 page_start 起的内容到 buf
-    fn read_slice_from_page(&self, page_id: usize, page_start: usize, buf: &mut [u8]) -> LinuxResult<isize> {
-        let rwlock = self.acquire_page(page_id);
-        let page = rwlock.read();
-        page.read(page_start, buf)
-    }
-
-    /// 将 buf 的内容写到页面 page_id，从 page_start 起的位置
-    fn write_slice_into_page(&self, page_id: usize, page_start: usize, buf: &[u8]) -> LinuxResult<isize> {
-        {
-            let mut dirty_pages = self.dirty_pages.write();
-            dirty_pages.insert(page_id);
-        }
-        let direct = {
-            let size = self.size.load(Ordering::SeqCst);
-            // 如果当前文件为空，或者 page_id 大于已存在的最大页号
-            size == 0 || page_id > (size - 1) / PAGE_SIZE_4K
-        };
-        let rwlock = self.acquire_page(page_id);
-        let mut page = rwlock.write();
-        page.write(page_start, buf, direct)
-    }
-
-    /// 功能：
-    /// - 将文件末尾到 offset 之间的内容全部填成 0，并更新文件大小为 offset
-    fn fill_gap(&self, offset: usize) {
-        let orig_size = self.size.load(Ordering::SeqCst);
-        if offset <= orig_size {
-            return;
-        }
-
-        let buf = vec![0 as u8; PAGE_SIZE_4K];
-        let start_offset = orig_size;
-        let start_page_id = start_offset / PAGE_SIZE_4K;
-        let end_page_id = offset / PAGE_SIZE_4K;
-
-        for page_id in start_page_id..end_page_id {
-            self.write_slice_into_page(page_id, 0, &buf).expect("Failed to write gap");
-        }
-
-        self.size.store(offset, Ordering::SeqCst);
-    }
-
-    /// 功能：
-    /// - 并发安全的读取给定位置的内容，不会改变文件指针；
-    /// - 适用于 sys_pread。
-    /// 
-    /// 返回：
-    /// - 读取到的长度
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> LinuxResult<usize> {
+    /// 并发安全的读取给定位置，返回读取到的长度
+    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         let file_len = self.size.load(Ordering::SeqCst);
         let read_len =  buf.len().min(file_len - offset);
         
         if offset >= file_len || read_len == 0 {
-            return Ok(0);
+            return 0;
         }
         let mut ret = 0 as usize;
         while ret < read_len {
@@ -604,25 +526,21 @@ impl PageCache {
             // 计算本次可读取的最大长度（不超过页尾和总读取长度）
             let cur_len = bytes_left_in_page.min(read_len - ret);
             let slice = &mut buf[ret..ret + cur_len];
-            self.read_slice_from_page(page_id, page_offset_start, slice);
+            self.read_slice_from_page(page_id, page_offset_start, slice)
+                .expect("PageCache read failed");
             ret += cur_len;
         }
-        Ok(ret)
+        ret
     }
 
-    /// 功能：
-    /// - 并发安全地写入给定位置，不会改变文件指针，但会更新文件大小；
-    /// - 适用于 sys_pwrite。
-    /// 
-    /// 返回：
-    /// - 成功写入的长度
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> LinuxResult<usize> {
+    /// 并发安全地写入给定位置，更新文件大小，返回写入长度
+    pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
         // 把间隙填 0
         self.fill_gap(offset);
 
         let mut ret = 0;
         let write_len = buf.len();
-
+        
         while ret < write_len {
             let current_pos = offset + ret;
             let page_id = current_pos / PAGE_SIZE_4K;
@@ -634,38 +552,25 @@ impl PageCache {
             
             //将 buf 的数据写入 pagecache，自动标记脏页
             let slice = &buf[ret..ret + cur_len];
-            let len = self.write_slice_into_page(page_id, page_offset_start, slice).expect("写入失败");
+            let len = self.write_slice_into_page(page_id, page_offset_start, slice, false)
+                .expect("PageCache writea_at failed");
             ret += len as usize;
+            self.size.fetch_max(offset + ret, Ordering::SeqCst);
         }
-
-        self.size.fetch_max(offset + ret, Ordering::SeqCst);
-        Ok(ret)
+        ret
     }
 
-    /// 顺序读取，并发不安全，会改变文件指针和文件大小。适用于 sys_read。
-    pub fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
-        let offset = self.offset.load(Ordering::SeqCst);
-        let result = self.read_at(offset, buf);
-        if let Ok(bytes_read) = result {
-            self.offset.fetch_add(bytes_read, Ordering::SeqCst);
+    pub fn truncate(&self, offset: usize) -> usize {
+        if self.size.fetch_min(offset, Ordering::SeqCst) == offset {
+            return offset;
         }
-        result
-    }
-
-    /// 顺序写入，并发不安全，会改变文件指针和文件大小。适用于 sys_write。
-    pub fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
-        let offset = self.offset.load(Ordering::SeqCst);
-        let result = self.write_at(offset, buf);
-        if let Ok(bytes_written) = result {
-            self.offset.fetch_add(bytes_written, Ordering::SeqCst);
-        }
-        result
+        self.fill_gap(offset);
+        return offset;
     }
 
     /// 获取文件属性。只有 size 是从 page cache 里面维护，其他都是从 axfs 层读取地。
     pub fn stat(&self) -> LinuxResult<Kstat> {
-        let file = self.file.upgrade().unwrap();
-        let file = file.lock();
+        let file = self.file.lock();
         let metadata = file.get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;
@@ -679,62 +584,19 @@ impl PageCache {
         });
     }
 
-    /// 移动文件指针
-    pub fn seek(&self, pos: SeekFrom) -> LinuxResult<isize> {
-        let mut size = self.size.load(Ordering::SeqCst) as u64;
-        let mut offset = self.offset.load(Ordering::SeqCst) as u64;
-        let new_offset = match pos {
-            SeekFrom::Start(pos) => Some(pos),
-            SeekFrom::Current(off) => offset.checked_add_signed(off),
-            SeekFrom::End(off) => size.checked_add_signed(off),
-        }
-        .ok_or_else(|| ax_err_type!(InvalidInput))?;
-    
-        self.offset.store(new_offset as usize, Ordering::SeqCst);
-        Ok(new_offset as isize)
+    /// 获取文件大小
+    pub fn get_file_size(&self) -> usize {
+        self.size.load(Ordering::SeqCst)
     }
 
-    /// 这里主要更新文件大小，同步文件指针
-    fn update_metadata(&self) -> LinuxResult<isize> {
-        let file_lock = self.file.upgrade().unwrap();
-        let mut file = file_lock.lock();
-        
-        // // 更新文件大小
-        // let size = self.size.load(Ordering::SeqCst);
-        // if size != file.get_attr()?.size() as usize {
-        //     assert!(size <= file.get_attr()?.size() as usize);
-        //     file.truncate(size as u64).unwrap_or_else(|e| {
-        //         error!("Failed to truncate file to size {}: {}", size, e);
-        //     });
-        // }
-        
-        // 更新文件指针
-        let offset = self.offset.load(Ordering::SeqCst);
-        let pos = SeekFrom::Start(offset as u64);
-        file.seek(pos).unwrap_or_else(|e| {
-            error!("Failed to seek file at offset {}: {}", offset, e);
-            0
-        });
-
-        // error!("Update File Metadata size {}, offset {}", file.get_attr()?.size(), offset);
-        Ok(0)
-    }
-    
-    /// 功能：
-    /// - 同步缓存到文件。
+    /// 同步内容修改到文件。
     /// 
-    /// 参数: 
-    /// - all == true => msync，刷新所有 page，原因是 mmap 后的页面读写无法在内核中维护脏页；
-    /// - all == false => fsync，只刷新 dirty_pages 队列中的 page。
-    pub fn sync(&self, all: bool) -> LinuxResult<isize> {
+    /// 注意：mmap 后通过内存读写修改文件不经过 page cache，所以不会在 dirty_pages 中有记录。
+    /// 但是 munmap 时会遍历所有页面并flush，保证了数据落到文件。
+    pub fn sync(&self) -> LinuxResult<usize> {
         let page_ids : Vec<usize> = {
-            if all {
-                let pages = self.pages.read();
-                pages.keys().copied().collect()   
-            } else {
-                let dirty_pages_lock = self.dirty_pages.read();
-                dirty_pages_lock.iter().copied().collect()
-            }
+            let dirty_pages_lock = self.dirty_pages.read();
+            dirty_pages_lock.iter().copied().collect()
         };
 
         for page_id in page_ids {
@@ -750,8 +612,111 @@ impl PageCache {
         Ok(0)
     }
 
+
+    /// 根据 page_id，获得 Page 的 Arc 指针。
+    /// 如果 PagePool 此时不存在，则新建一个 Page 并初始化
+    fn acquire_page(&self, page_id: usize) -> PagePtr {
+        let mut pages = self.pages.write();
+        let orig_key = pages.get(&page_id).cloned().unwrap_or(-1);
+        
+        let (page, new_key) = self.page_pool.acquire_page(orig_key);
+        if orig_key != new_key {
+            let mut page = page.write();
+            page.load(Arc::downgrade(&self.file), page_id);
+            pages.remove(&page_id);
+            pages.insert(page_id, new_key);
+        }
+        page
+    }
+
+    /// 检查页号为 page_id 的页是否存在于 PagePool，若存在则执行操作 f
+    fn _with_valid_page<T, F>(&self, page_id: usize, f: F) -> bool
+    where
+        F: FnOnce(&mut Page) -> T,
+    {
+        {
+            let pages = self.pages.read();
+            if !pages.contains_key(&page_id) {
+                return false;
+            }
+            let page_key = pages.get(&page_id).unwrap();
+            if !self.page_pool.check_page_exist(page_key) {
+                return false;
+            }
+        }
+        
+        let rwlock = self.acquire_page(page_id);
+        let mut page = rwlock.write();
+        f(page.deref_mut());
+        true
+    }
+
+    /// 读取页面 page_id，从 page_start 起的内容到 buf
+    fn read_slice_from_page(&self, page_id: usize, page_start: usize, buf: &mut [u8]) -> LinuxResult<isize> {
+        let rwlock = self.acquire_page(page_id);
+        let page = rwlock.read();
+        page.read(page_start, buf)
+    }
+
+    /// 将 buf 的内容写到页面 page_id，从 page_start 起的位置
+    /// 
+    /// fill_gap 参数含义：表明这次写入是为了扩展文件大小，写入内容全为 0。
+    /// 要求立即刷回文件(direct)，并且如果文件已经是脏页（被其他进程写入了）则取消写入。
+    fn write_slice_into_page(&self, page_id: usize, page_start: usize, buf: &[u8], fill_gap: bool) -> LinuxResult<isize> {
+        {
+            let mut dirty_pages = self.dirty_pages.write();
+            dirty_pages.insert(page_id);
+        }
+
+        let rwlock = self.acquire_page(page_id);
+        let mut page = rwlock.write();
+        
+        // 避免一种情况：文件初始为空，进程 A 需要在第8页写入，进程 B 需要在第 4页写入，
+        // 而第 4 页再进程 B 写入之后又被进程 A 清空
+        if fill_gap && self.size.load(Ordering::SeqCst) > page_id * PAGE_SIZE_4K {
+            return Ok(0);
+        }
+        
+        page.write(page_start, buf, fill_gap)
+    }
+
+    /// 处理新建的页，全部初始化为 0
+    fn fill_gap(&self, offset: usize) {
+        let orig_size = self.size.load(Ordering::SeqCst);
+        if offset <= orig_size {
+            return;
+        }
+
+        let buf = vec![0 as u8; PAGE_SIZE_4K];
+        let start_offset = orig_size;
+        let start_page_id = start_offset / PAGE_SIZE_4K;
+        let end_page_id = offset / PAGE_SIZE_4K;
+
+        for page_id in start_page_id..end_page_id {
+            self.write_slice_into_page(page_id, 0, &buf, true)
+                .expect("Failed to write gap");
+            self.size.fetch_max(offset.min((page_id + 1) * PAGE_SIZE_4K), Ordering::SeqCst);
+        }
+    }
+
+    /// 这里主要更新文件大小，以后可以扩展同步更多信息，比如修改
+    fn update_metadata(&self) -> LinuxResult<isize> {
+        let file = self.file.lock();
+        
+        // 更新文件大小
+        let size = self.size.load(Ordering::SeqCst);
+        if size != file.get_attr()?.size() as usize {
+            assert!(size <= file.get_attr()?.size() as usize);
+            file.truncate(size as u64).unwrap_or_else(|e| {
+                error!("Failed to truncate file to size {}: {}", size, e);
+            });
+        }
+        info!("Update File Metadata size {}", file.get_attr()?.size());
+        Ok(0)
+    }
+
     /// 在 PagePool 中清除关于这个文件的所有页面，并同步信息。
-    pub fn clear(&self) -> LinuxResult<isize> {
+    fn clear(&self) -> LinuxResult<isize> {
         let page_keys: Vec<PageKey> = {
             let pages = self.pages.read();
             pages.values().copied().collect()
@@ -768,98 +733,92 @@ impl PageCache {
 
 impl Drop for PageCache {
     fn drop(&mut self) {
+        warn!("Drop page cache {}", self.path);
         self.clear().expect("PageCache::drop failed to clear");
     }
 }
 
 /// 仅有 PageCacheManager 长久持有 Arc<PageCache>，其他地方只允许临时持有 Arc<PageCache>
 /// 当 PageCache 中删掉 Arc<PageCache>，即会 RAII 析构 PageCache
-/// 可以根据 fd 或者 path 找到 Arc<PageCache>
-/// sys_open, sys_close, sys_stat 需要根据 path 找到 page_cache
 pub struct PageCacheManager {
-    path_fd: Mutex<BTreeMap<String, BTreeSet<i32>>>,
-    fd_path: Mutex<BTreeMap<i32, String>>,
     path_cache: Mutex<BTreeMap<String, Arc<PageCache>>>,
+    path_cnt: Mutex<BTreeMap<String, i32>>
 }
 
 impl PageCacheManager {
     const fn new() -> Self {
         Self { 
-            path_fd: Mutex::new(BTreeMap::new()),
-            fd_path: Mutex::new(BTreeMap::new()),
             path_cache: Mutex::new(BTreeMap::new()),
+            path_cnt: Mutex::new(BTreeMap::new()),
         }
     }
     
-    // 由 sys_open 调用
-    pub fn open_page_cache(&self, path: &String, file: Weak<Mutex<axfs::fops::File>>) -> Weak<PageCache> {
+    //  由 File 的构造函数调用，获得 page cache 的指针并增加 path 的打开计数
+    pub fn open_page_cache(&self, path: &String) -> Weak<PageCache> {
+        let mut path_cnt = self.path_cnt.lock();
         let mut path_cache = self.path_cache.lock();
 
         if let Some(cache) = path_cache.get(path) {
+            let cnt = path_cnt.get_mut(path).unwrap();
+            *cnt += 1;
             return Arc::downgrade(cache);
         }
-
-        let cache = Arc::new(PageCache::new(file));
+        
+        info!("Create a new page cache for {}", path);
+        assert!(!path_cnt.contains_key(path));
+        path_cnt.insert(path.clone(), 1);
+        let cache = Arc::new(PageCache::new(path.clone()));
         path_cache.insert(path.clone(), cache.clone());
+        assert!(path_cache.contains_key(path));
         return Arc::downgrade(&cache);
     }
 
-    pub fn insert_fd(&self, fd: i32, path: &String) {
-        let mut fd_path = self.fd_path.lock();
-        let mut path_fd = self.path_fd.lock();
+    /// 由 File 的析构函数调用，减少 path 的引用计数
+    pub fn close_page_cache(&self, path: &String) {
+        let mut path_cnt = self.path_cnt.lock();
         let mut path_cache = self.path_cache.lock();
+        let cnt = path_cnt.get_mut(path).unwrap();
+        *cnt -= 1;
         
-        fd_path.insert(fd, path.clone());
-        if let Some(fd_set) = path_fd.get_mut(path) {
-            fd_set.insert(fd);
-        } else {
-            path_fd.insert(path.clone(), BTreeSet::<i32>::from([fd]));
+        if *cnt == 0 as i32 {
+            info!("Close page cache for {}", path);
+            path_cache.remove(path).unwrap();
+            path_cnt.remove(path).unwrap();
         }
     }
 
-    // 由 sys_fstat 调用
-    pub fn get_page_cache(&self, path: &String) -> Option<Weak<PageCache>> {
-        let path_cache = self.path_cache.lock();
-        if let Some(arc_cache) = path_cache.get(path) {
-            return Some(Arc::downgrade(arc_cache));
-        } else {
-            return None;
+    pub fn populate(&self, fd: i32, offset: usize, length: usize) {
+        let cache = self.fd_cache(fd);
+        let start_id = offset / PAGE_SIZE_4K;
+        let end_id = (offset + length) / PAGE_SIZE_4K;
+        for id in start_id..end_id {
+            let _ = cache.acquire_page(id);
         }
     }
 
-    // 由 sys_close 调用
-    pub fn try_close_page_cache(&self, fd: i32) -> LinuxResult<isize> {
-        let mut path_fd = self.path_fd.lock();
-        let mut path_cache = self.path_cache.lock();
-        let mut fd_path = self.fd_path.lock();
-        info!("page cache manager close fd {}", fd);
-
-        if let Some(path) = fd_path.remove(&fd) {
-            let empty = {
-                let fd_set = path_fd.get_mut(&path).unwrap();
-                fd_set.remove(&fd);
-                fd_set.is_empty()
-            };
-            if empty {
-                path_fd.remove(&path).unwrap();
-                path_cache.remove(&path).unwrap();
-            }
+    pub fn munmap(&self, fd: i32, offset: usize, length: usize, vaddr: usize) {
+        let cache = self.fd_cache(fd);
+        let start_id = offset / PAGE_SIZE_4K;
+        let end_id = (offset + length) / PAGE_SIZE_4K;
+        for id in start_id..end_id {
+            let vaddr = VirtAddr::from(vaddr + (id - start_id) * PAGE_SIZE_4K);
+            cache.unmap_virt_page(id, vaddr);
         }
-        Ok(0)
-    } 
+    }
+    
+    pub fn msync(&self, fd: i32, offset: usize, length: usize) {
+        let cache = self.fd_cache(fd);
+        let start_id = offset / PAGE_SIZE_4K;
+        let end_id = (offset + length) / PAGE_SIZE_4K;
+        for id in start_id..end_id {
+            cache.flush_page(id).expect("msync flush page failed");
+        }
+    }
 
-    // 辅助函数，根据 fd 查询对应的 page cache
+    // 主要用于 mmap 相关函数，需要根据 fd 找到对应的 page cache
     pub fn fd_cache(&self, fd: i32) -> Arc<PageCache> {
-        let fd_path = self.fd_path.lock();
-        let path = fd_path.get(&fd).unwrap();
-        let path_cache = self.path_cache.lock();
-        path_cache.get(path).unwrap().clone()
-    }
-
-    // 辅助函数，用于查找 fd 对应的文件名
-    pub fn find_path(&self, fd: i32) -> Option<String> {
-        let fd_path = self.fd_path.lock();
-        fd_path.get(&fd).cloned()
+        let file = File::from_fd(fd).unwrap();
+        file.get_cache()
     }
 }
 

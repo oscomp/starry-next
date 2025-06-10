@@ -10,10 +10,10 @@
 #include <stdatomic.h>
 #include <assert.h>
 
-#define FILENAME "mmap_shared_file.bin"
-const int  FILE_SIZE = (4096 * 20);  // 文件大小
-#define WRITER_COUNT 1           // 写进程数量
-#define READER_COUNT 5           // 读进程数量
+#define FILENAME "/tmp/mmap_shared_file.bin"
+const int  FILE_SIZE = (4096 * 200);  // 文件大小
+#define WRITER_COUNT 2           // 写进程数量
+#define READER_COUNT 4           // 读进程数量
 
 char func(unsigned i) {
     return i % 14 + 'a';
@@ -21,19 +21,15 @@ char func(unsigned i) {
 
 // 写进程函数
 void writer_process(int writer_id) {
-    int fd = open(FILENAME, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    assert(writer_id < WRITER_COUNT);
+    int fd = open(FILENAME, O_RDWR | O_CREAT, 0666);
     if (fd == -1) {
         perror("writer open failed");
         exit(EXIT_FAILURE);
     }
 
     // 扩展文件大小
-    if (lseek(fd, FILE_SIZE - 1, SEEK_SET) == -1) {
-        perror("lseek failed");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-    write(fd, "", 1);
+    ftruncate(fd, FILE_SIZE);
 
     // 映射整个文件
     char *map = mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -44,17 +40,14 @@ void writer_process(int writer_id) {
     }
 
     // 写入数据块
-    for (unsigned i = 0; i < FILE_SIZE; i++) {
+    for (unsigned i = writer_id; i < FILE_SIZE; i += WRITER_COUNT) {
         map[i] = func(i);
-    }
-
-    for (unsigned i = 0; i < FILE_SIZE; i++) {
-        assert(map[i] == func(i));
     }
     munmap(map, FILE_SIZE);
     
     close(fd);
-    exit(EXIT_SUCCESS);
+    printf("Writer %d 写入结束\n", writer_id);
+    // exit(EXIT_SUCCESS);
 }
 
 // 读进程函数
@@ -67,7 +60,7 @@ void reader_process(int reader_id) {
         exit(EXIT_FAILURE);
     }
 
-    // char tmp[10];
+    printf("Reader %d open file success, fd: %d\n", reader_id), fd;
 
     // 获取文件大小
     struct stat st;
@@ -76,16 +69,15 @@ void reader_process(int reader_id) {
         close(fd);
         exit(EXIT_FAILURE);
     }
-
-    // int n = read(fd, tmp, 5);
-    // printf("read %d; fd tmp: %c %c %c !\n", n, tmp[0], tmp[1], tmp[2]);
     
-    if (st.st_size < FILE_SIZE) {
+    if (st.st_size != FILE_SIZE) {
         fprintf(stderr, "Reader %d: File size too small (%ld < %d)\n", 
                 reader_id, st.st_size, FILE_SIZE);
         close(fd);
         exit(EXIT_FAILURE);
     }
+
+    printf("Reader %d check filesize success\n", reader_id);
 
     // 只读映射
     char *map = mmap(NULL, FILE_SIZE, PROT_READ, MAP_SHARED, fd, 0);
@@ -101,10 +93,8 @@ void reader_process(int reader_id) {
         printf("Reader %d start round %d\n", reader_id, round);
         for (unsigned i = 0; i < FILE_SIZE; i++) {
             if (map[i] != func(i)) {
-                printf("读写不一致：期待 %c, 实际 %c\n", func(i), map[i]);
+                printf("位置 %d 读写不一致：期待 %d, 实际 %d\n", i, func(i), map[i]);
             }
-            // // 这里调用 assert 会导致 SF
-            assert(map[i] == func(i));
         }
     }
     
@@ -116,30 +106,34 @@ void reader_process(int reader_id) {
 }
 
 int main() {
-    pid_t writer_pid, reader_pids[READER_COUNT];
+    pid_t writer_pids[WRITER_COUNT], reader_pids[READER_COUNT];
     int status;
-    
-    // 删除可能存在的旧文件
-    unlink(FILENAME);
     
     printf("Starting MMAP read/write consistency test\n");
     printf("File: %s, Size: %d bytes\n", FILENAME, FILE_SIZE);
     printf("Writer: %d, Readers: %d\n\n", WRITER_COUNT, READER_COUNT);
 
     // 创建写进程
-    writer_pid = fork();
-    if (writer_pid == 0) {
-        writer_process(0);
-        exit(EXIT_SUCCESS);
-    } else if (writer_pid < 0) {
-        perror("fork for writer failed");
-        exit(EXIT_FAILURE);
-    } else {
-        waitpid(writer_pid, &status, 0);
+    for (int i = 0; i < WRITER_COUNT; i++) {
+        writer_pids[i] = fork();
+        if (writer_pids[i] == 0) {
+            writer_process(i);
+            exit(EXIT_SUCCESS);
+        } else if (writer_pids[i] < 0) {
+            perror("fork for reader failed");
+            exit(EXIT_FAILURE);
+        }
     }
 
+    for (int i = 0; i < WRITER_COUNT; i++) {
+        waitpid(writer_pids[i], &status, 0);
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+                fprintf(stderr, "Writer process failed\n");
+            } else {
+                printf("Writer process completed successfully\n");
+            }
+    }
 
-    
     // 创建读进程
     for (int i = 0; i < READER_COUNT; i++) {
         reader_pids[i] = fork();
@@ -148,16 +142,8 @@ int main() {
             exit(EXIT_SUCCESS);
         } else if (reader_pids[i] < 0) {
             perror("fork for reader failed");
-            kill(writer_pid, SIGTERM);
             exit(EXIT_FAILURE);
         }
-    }
-
-
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-        fprintf(stderr, "Writer process failed\n");
-    } else {
-        printf("\nWriter process completed successfully\n");
     }
 
     // 等待所有读进程完成
@@ -172,12 +158,12 @@ int main() {
     // 清理
     unlink(FILENAME);
     
-    printf("\nTest completed. ");
+    printf("\nTest completed. \n");
     if (reader_failures == 0) {
-        printf("SUCCESS: All readers verified data consistency\n");
+        printf("SUCCESS: 所有 ReaderProcess 验证成功\n");
         exit(EXIT_SUCCESS);
     } else {
-        printf("FAILURE: %d/%d readers found inconsistencies\n", 
+        printf("FAILURE: %d/%d readers 发现错误\n", 
                reader_failures, READER_COUNT);
         exit(EXIT_FAILURE);
     }

@@ -1,12 +1,11 @@
 use axhal::{
     mem::VirtAddr,
-    mem::PhysAddr,
     paging::MappingFlags,
     trap::{register_trap_handler, PAGE_FAULT},
 };
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::SIGSEGV;
-use starry_api::{do_exit, file::page_cache_manager, lazy_map_file};
+use starry_api::{do_exit, lazy_map_file};
 use starry_core::mm::is_accessing_user_memory;
 
 

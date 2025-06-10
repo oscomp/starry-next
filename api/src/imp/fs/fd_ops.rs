@@ -76,31 +76,34 @@ pub fn sys_openat(
         Some(Directory::from_fd(dirfd)?)
     };
     let real_path = handle_file_path(dirfd, path)?;
-
+    
     if !opts.has_directory() {
         match dir.as_ref().map_or_else(
             || axfs::fops::File::open(real_path.as_str(), &opts),
             |dir| dir.inner().open_file_at(real_path.as_str(), &opts),
         ) {
-            Err(AxError::IsADirectory) => {}
-            r => {
-                let inner = r?;
-                let direct = inner.is_direct();
-                let file = Arc::new(Mutex::new(inner));
+            Ok(axfile) => {
                 let path = real_path.to_string();
-                let cache = if !direct {
-                    let manager = page_cache_manager();
-                    manager.open_page_cache(&path, Arc::downgrade(&file))
+                let fd = if opts.has_direct() {
+                    // 不经过 page cache
+                    let file = Arc::new(Mutex::new(axfile));
+                    File::new(Some(file), path, true, Weak::new()).add_to_fd_table()?
                 } else {
-                    Weak::new()
-                };
-                let fd = File::new(file, path, cache).add_to_fd_table()?;
-                if !direct {
-                    let manager = page_cache_manager();
-                    manager.insert_fd(fd, &real_path.to_string());
-                }
+                    drop(axfile);
+                    // 经过 page cache
+                    let cache = {
+                        let manager = page_cache_manager();
+                        manager.open_page_cache(&path)
+                    };
+                    File::new(None, path, false, cache).add_to_fd_table()?
+                };                
                 return Ok(fd as _);
             },
+            Err(AxError::IsADirectory) => {}
+            Err(e) => {
+                error!("sys_open at {} failed: {}", path, e);
+                return Err(LinuxError::EINVAL);
+            }
         }
     }
 
@@ -129,8 +132,6 @@ pub fn sys_open(
 
 pub fn sys_close(fd: c_int) -> LinuxResult<isize> {
     debug!("sys_close <= {}", fd);
-    let manager = page_cache_manager();
-    manager.try_close_page_cache(fd)?;
     close_file_like(fd)?;
     Ok(0)
 }
