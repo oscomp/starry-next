@@ -37,7 +37,6 @@ axio = "0.1.1"
 ctor_bare = "0.2.1"
 flatten_objects = "0.2.3"
 num_enum = { version = "0.7", default-features = false }
-hashbrown = "0.15.3"
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

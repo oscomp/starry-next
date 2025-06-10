@@ -212,7 +212,7 @@ pub struct ProcessData {
     pub futex_table: FutexTable,
 
     /// The process mmap manager
-    process_mmap_mnager: Arc<ProcessMmapManager>,
+    vma_mnager: Arc<ProcessVMAManager>,
 }
 
 impl ProcessData {
@@ -239,7 +239,7 @@ impl ProcessData {
             )),
 
             futex_table: FutexTable::new(),
-            process_mmap_mnager: Arc::new(ProcessMmapManager::new()),
+            vma_mnager: Arc::new(ProcessMmapManager::new()),
         }
     }
 
@@ -269,8 +269,8 @@ impl ProcessData {
         self.exit_signal != Some(Signo::SIGCHLD)
     }
 
-    pub fn process_mmap_mnager(&self) -> Arc<ProcessMmapManager> {
-        self.process_mmap_mnager.clone()
+    pub fn vma_mnager(&self) -> Arc<ProcessMmapManager> {
+        self.vma_mnager.clone()
     }
 }
 

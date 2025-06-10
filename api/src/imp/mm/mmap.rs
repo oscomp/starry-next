@@ -72,7 +72,7 @@ bitflags::bitflags! {
 /// ### 需要在维护的信息：
 /// 1. process_data 里的 aspace，即 axmm 层的 AddrSpace。它维护已分配的虚拟地址段，并分配新地址。
 /// 插入在 sys_mmap 时执行，删除在 sys_munmap 时执行。
-/// 2. process_data 里的 process_mmap_manager。它的主要作用是在 page fault 时找到相应的 VMA 信息，
+/// 2. process_data 里的 vma_mnager。它的主要作用是在 page fault 时找到相应的 VMA 信息，
 /// 包括 fd/start_addr/shared 等等。为了维持底层 Unikernel 的简洁性，将这些内容放在 Starry 层维护。
 /// 插入在 sys_mmap 时执行，删除在 sys_munmap 时执行。
 /// 3. Page 里的 virt_pages。它的作用是实现物理页的反向映射，用于检查页面是否为脏页，在页面置换的时候
@@ -149,9 +149,9 @@ pub fn sys_mmap(
     let fd = { if anonymous { -1 } else { fd } };
     let populate =  map_flags.contains(MmapFlags::POPULATE);
 
-    // 添加 VMA 信息到 process_mmap_manager 和 aspace，等访问页面时触发 page fault 后建立页表映射
+    // 添加 VMA 信息到 vma_mnager 和 aspace，等访问页面时触发 page fault 后建立页表映射
     let curr = current();
-    let manager = curr.task_ext().process_data().process_mmap_mnager();
+    let manager = curr.task_ext().process_data().vma_mnager();
     manager.add_area(start_addr, length, fd, offset, !private)?;
 
     if anonymous {
@@ -193,10 +193,10 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     // 同步文件
     sys_msync(addr, length, 0)?;
 
-    // 从 process_mmap_manager 中移除 VMA
+    // 从 vma_mnager 中移除 VMA
     let curr = current();
     let process_data = curr.task_ext().process_data();
-    let mmap_manager = process_data.process_mmap_mnager();
+    let mmap_manager = process_data.vma_mnager();
     let area = mmap_manager.query(VirtAddr::from(addr));
     if area.is_none() {
         error!("Invalid munmap area!");
@@ -251,7 +251,7 @@ pub fn sys_msync(addr: usize, length: usize, _flags: isize) -> LinuxResult<isize
     }
     
     let curr = current();
-    let mmap_manager = curr.task_ext().process_data().process_mmap_mnager();
+    let mmap_manager = curr.task_ext().process_data().vma_mnager();
     let area = mmap_manager.query(VirtAddr::from(addr));
     if area.is_none() {
         error!("Invalid msync area");
@@ -274,7 +274,7 @@ pub fn sys_msync(addr: usize, length: usize, _flags: isize) -> LinuxResult<isize
 /// 在 page fatul 时，判断是否由 mmap 文件映射引起，并建立建立虚拟页 => 文件缓存页的映射。
 pub fn lazy_map_file(vaddr: VirtAddr, access_flags: MappingFlags) -> bool {
     let curr = current();
-    let mmap_manager = curr.task_ext().process_data().process_mmap_mnager();
+    let mmap_manager = curr.task_ext().process_data().vma_mnager();
     let area = mmap_manager.query(vaddr);
     
     // page fatul 并非由 mmap 引起，开销仅有 mmap_manager 的一次 query。

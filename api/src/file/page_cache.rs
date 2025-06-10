@@ -186,7 +186,7 @@ impl Page {
             match get_process(pid) {
                 Ok(process) => {
                     let process_data = process.data::<ProcessData>().unwrap();
-                    let mmap_manager = process_data.process_mmap_mnager();
+                    let mmap_manager = process_data.vma_mnager();
 
                     // 可能进程 munmap 取消映射，但是 Page 中没有实时更新
                     if mmap_manager.query(vaddr).is_some() {
@@ -212,7 +212,7 @@ impl Page {
             match get_process(pid) {
                 Ok(process) => {
                     let process_data = process.data::<ProcessData>().unwrap();
-                    let mmap_manager = process_data.process_mmap_mnager();
+                    let mmap_manager = process_data.vma_mnager();
                     
                     // 可能进程 munmap 取消映射，但是 Page 中没有实时更新
                     if mmap_manager.query(vaddr).is_some() {
@@ -291,7 +291,7 @@ impl Drop for Page {
             match get_process(pid) {
                 Ok(process) => {
                     let process_data = process.data::<ProcessData>().unwrap();
-                    let mmap_manager = process_data.process_mmap_mnager();
+                    let mmap_manager = process_data.vma_mnager();
 
                     if let Some(_) = mmap_manager.query(vaddr) {
                         let mut aspace = process_data.aspace.lock();

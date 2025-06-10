@@ -236,13 +236,13 @@ pub struct VirtMemArea {
 /// 主要场景：
 ///   1. 处理因 mmap lazy-alloc 产生的 page fault，
 ///   2. 在页面置换时实现页表反向映射，根据虚拟地址找到对应的 Vitual Memory Area 信息
-pub struct ProcessMmapManager {
+pub struct ProcessVMAManager {
     // 这些区间一定是不相交的
     areas: Mutex<BTreeMap<VirtAddr, VirtMemArea>>,
 }
 
-impl ProcessMmapManager {
-    /// 在进程创建的时候新建 ProcessMmapManager
+impl ProcessVMAManager {
+    /// 在进程创建的时候新建 ProcessVMAManager
     pub fn new() -> Self {
         Self {
             areas: Mutex::new(BTreeMap::new()),
