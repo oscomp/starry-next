@@ -1,18 +1,19 @@
 use core::{
-    ffi::{c_char, c_int},
-    panic,
+    ffi::{c_char, c_int}, panic
 };
 
 use alloc::string::ToString;
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use linux_raw_sys::general::{
-    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECTORY,
-    O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
+    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT, O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY
 };
+use alloc::sync::{Arc, Weak};
+use axsync::Mutex;
 
 use crate::{
-    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like},
+    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like, 
+        page_cache_manager},
     path::handle_file_path,
     ptr::UserConstPtr,
 };
@@ -47,6 +48,9 @@ fn flags_to_options(flags: c_int, _mode: __kernel_mode_t) -> OpenOptions {
     if flags & O_DIRECTORY != 0 {
         options.directory(true);
     }
+    if flags & O_DIRECT != 0 {
+        options.direct(true);
+    }
     options
 }
 
@@ -63,7 +67,7 @@ pub fn sys_openat(
     mode: __kernel_mode_t,
 ) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    let opts = flags_to_options(flags, mode);
+    let opts: OpenOptions = flags_to_options(flags, mode);
     debug!("sys_openat <= {} {} {:?}", dirfd, path, opts);
 
     let dir = if path.starts_with('/') || dirfd == AT_FDCWD {
@@ -72,16 +76,33 @@ pub fn sys_openat(
         Some(Directory::from_fd(dirfd)?)
     };
     let real_path = handle_file_path(dirfd, path)?;
-
+    
     if !opts.has_directory() {
         match dir.as_ref().map_or_else(
-            || axfs::fops::File::open(path, &opts),
-            |dir| dir.inner().open_file_at(path, &opts),
+            || axfs::fops::File::open(real_path.as_str(), &opts),
+            |dir| dir.inner().open_file_at(real_path.as_str(), &opts),
         ) {
-            Err(AxError::IsADirectory) => {}
-            r => {
-                let fd = File::new(r?, real_path.to_string()).add_to_fd_table()?;
+            Ok(axfile) => {
+                let path = real_path.to_string();
+                let fd = if opts.has_direct() {
+                    // 不经过 page cache
+                    let file = Arc::new(Mutex::new(axfile));
+                    File::new(Some(file), path, true, Weak::new()).add_to_fd_table()?
+                } else {
+                    drop(axfile);
+                    // 经过 page cache
+                    let cache = {
+                        let manager = page_cache_manager();
+                        manager.open_page_cache(&path)
+                    };
+                    File::new(None, path, false, cache).add_to_fd_table()?
+                };                
                 return Ok(fd as _);
+            },
+            Err(AxError::IsADirectory) => {}
+            Err(e) => {
+                error!("sys_open at {} failed: {}", path, e);
+                return Err(LinuxError::EINVAL);
             }
         }
     }
