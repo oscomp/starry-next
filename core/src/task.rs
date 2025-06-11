@@ -30,7 +30,7 @@ use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
 
-use crate::{futex::FutexTable, time::TimeStat, mm::ProcessMmapManager};
+use crate::{futex::FutexTable, time::TimeStat, mm::ProcessVMAManager};
 
 /// Create a new user task.
 pub fn new_user_task(
@@ -239,7 +239,7 @@ impl ProcessData {
             )),
 
             futex_table: FutexTable::new(),
-            vma_mnager: Arc::new(ProcessMmapManager::new()),
+            vma_mnager: Arc::new(ProcessVMAManager::new()),
         }
     }
 
@@ -269,7 +269,7 @@ impl ProcessData {
         self.exit_signal != Some(Signo::SIGCHLD)
     }
 
-    pub fn vma_mnager(&self) -> Arc<ProcessMmapManager> {
+    pub fn vma_mnager(&self) -> Arc<ProcessVMAManager> {
         self.vma_mnager.clone()
     }
 }

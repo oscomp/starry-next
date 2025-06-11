@@ -992,7 +992,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 [[package]]
 name = "page_table_entry"
 version = "0.5.3"
-source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch#0246378a447a72ce43dd66280ff187fa5f056522"
+source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch?rev=8bbd18a#8bbd18a15770c74734d2b2f69b69243ee53d6739"
 dependencies = [
  "aarch64-cpu",
  "bitflags 2.9.0",
@@ -1003,7 +1003,7 @@ dependencies = [
 [[package]]
 name = "page_table_multiarch"
 version = "0.5.3"
-source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch#0246378a447a72ce43dd66280ff187fa5f056522"
+source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch?rev=8bbd18a#8bbd18a15770c74734d2b2f69b69243ee53d6739"
 dependencies = [
  "log",
  "memory_addr",
