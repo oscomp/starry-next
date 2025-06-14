@@ -2,11 +2,9 @@ use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
-use linux_raw_sys::general::{
-    MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
-    PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE,
-};
-use memory_addr::{VirtAddr, VirtAddrRange};
+use linux_raw_sys::general::*;
+use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange};
+use page_table_multiarch::PageSize;
 
 use crate::file::{File, FileLike};
 
@@ -81,14 +79,26 @@ pub fn sys_mmap(
     // TODO: check illegal flags for mmap
     // An example is the flags contained none of MAP_PRIVATE, MAP_SHARED, or MAP_SHARED_VALIDATE.
     let map_flags = MmapFlags::from_bits_truncate(flags);
+    if map_flags.contains(MmapFlags::from_bits_truncate(MAP_PRIVATE | MAP_SHARED)) {
+        return Err(LinuxError::EINVAL);
+    }
 
     info!(
         "sys_mmap: addr: {:x?}, length: {:x?}, prot: {:?}, flags: {:?}, fd: {:?}, offset: {:?}",
         addr, length, permission_flags, map_flags, fd, offset
     );
 
-    let start = memory_addr::align_down_4k(addr);
-    let end = memory_addr::align_up_4k(addr + length);
+    let page_size = if flags & MAP_HUGETLB == 0 {
+        PageSize::Size4K
+    } else {
+        match flags & MAP_HUGE_MASK << MAP_HUGE_SHIFT {
+            MAP_HUGE_1GB => PageSize::Size1G,
+            _ => PageSize::Size2M,
+        }
+    };
+
+    let start = addr.align_down(page_size);
+    let end = (addr + length).align_up(page_size);
     let aligned_length = end - start;
     debug!(
         "start: {:x?}, end: {:x?}, aligned_length: {:x?}",
@@ -108,11 +118,13 @@ pub fn sys_mmap(
                 VirtAddr::from(start),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                page_size,
             )
             .or(aspace.find_free_area(
                 aspace.base(),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                page_size,
             ))
             .ok_or(LinuxError::ENOMEM)?
     };
@@ -128,6 +140,7 @@ pub fn sys_mmap(
         aligned_length,
         permission_flags.into(),
         populate,
+        page_size,
     )?;
 
     if populate {
@@ -141,7 +154,7 @@ pub fn sys_mmap(
         let length = core::cmp::min(length, file_size - offset);
         let mut buf = vec![0u8; length];
         file.read_at(offset as u64, &mut buf)?;
-        aspace.write(start_addr, &buf)?;
+        aspace.write(start_addr, page_size, &buf)?;
     }
     Ok(start_addr.as_usize() as _)
 }
@@ -150,8 +163,8 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let curr = current();
     let process_data = curr.task_ext().process_data();
     let mut aspace = process_data.aspace.lock();
-    let length = memory_addr::align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
+    let length = memory_addr::align_up_4k(length);
     aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
     Ok(0)
