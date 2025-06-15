@@ -11,6 +11,8 @@ oscomp_binary: ax_root defconfig
 
 oscomp_build:
 	# Build for os competition
+	# For OS 2025 competition, we use nightly-2025-01-18 toolchain
+	# Notes: We don't ensure the system is available for this toolchain.
 	RUSTUP_TOOLCHAIN=nightly-2025-01-18 $(MAKE) oscomp_binary ARCH=riscv64 AX_TESTCASE=oscomp BUS=mmio FEATURES=lwext4_rs 
 	RUSTUP_TOOLCHAIN=nightly-2025-01-18 $(MAKE) oscomp_binary ARCH=loongarch64 AX_TESTCASE=oscomp FEATURES=lwext4_rs
 

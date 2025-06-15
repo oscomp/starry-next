@@ -1,10 +1,9 @@
 use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageSize};
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::*;
-use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange};
-use page_table_multiarch::PageSize;
+use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange, align_up_4k};
 
 use crate::file::{File, FileLike};
 
@@ -61,6 +60,10 @@ bitflags::bitflags! {
         const NORESERVE = MAP_NORESERVE;
         /// Allocation is for a stack.
         const STACK = MAP_STACK;
+        /// Huge page
+        const HUGE = MAP_HUGETLB;
+        /// Huge page 1g size
+        const HUGE_1GB = MAP_HUGETLB | MAP_HUGE_1GB;
     }
 }
 
@@ -79,7 +82,7 @@ pub fn sys_mmap(
     // TODO: check illegal flags for mmap
     // An example is the flags contained none of MAP_PRIVATE, MAP_SHARED, or MAP_SHARED_VALIDATE.
     let map_flags = MmapFlags::from_bits_truncate(flags);
-    if map_flags.contains(MmapFlags::from_bits_truncate(MAP_PRIVATE | MAP_SHARED)) {
+    if map_flags.contains(MmapFlags::PRIVATE | MmapFlags::SHARED) {
         return Err(LinuxError::EINVAL);
     }
 
@@ -88,13 +91,12 @@ pub fn sys_mmap(
         addr, length, permission_flags, map_flags, fd, offset
     );
 
-    let page_size = if flags & MAP_HUGETLB == 0 {
-        PageSize::Size4K
+    let page_size = if map_flags.contains(MmapFlags::HUGE_1GB) {
+        PageSize::Size1G
+    } else if map_flags.contains(MmapFlags::HUGE) {
+        PageSize::Size2M
     } else {
-        match flags & MAP_HUGE_MASK << MAP_HUGE_SHIFT {
-            MAP_HUGE_1GB => PageSize::Size1G,
-            _ => PageSize::Size2M,
-        }
+        PageSize::Size4K
     };
 
     let start = addr.align_down(page_size);
@@ -163,8 +165,8 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let curr = current();
     let process_data = curr.task_ext().process_data();
     let mut aspace = process_data.aspace.lock();
+    let length = align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
-    let length = memory_addr::align_up_4k(length);
     aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
     Ok(0)
@@ -182,7 +184,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: u32) -> LinuxResult<isize>
     let curr = current();
     let process_data = curr.task_ext().process_data();
     let mut aspace = process_data.aspace.lock();
-    let length = memory_addr::align_up_4k(length);
+    let length = align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
     aspace.protect(start_addr, length, permission_flags.into())?;
 
