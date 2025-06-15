@@ -61,6 +61,10 @@ bitflags::bitflags! {
         const NORESERVE = MAP_NORESERVE;
         /// Allocation is for a stack.
         const STACK = MAP_STACK;
+        /// Huge page
+        const HUGE = MAP_HUGETLB;
+        /// Huge page 1g size
+        const HUGE_1GB = MAP_HUGETLB | MAP_HUGE_1GB;
     }
 }
 
@@ -79,7 +83,7 @@ pub fn sys_mmap(
     // TODO: check illegal flags for mmap
     // An example is the flags contained none of MAP_PRIVATE, MAP_SHARED, or MAP_SHARED_VALIDATE.
     let map_flags = MmapFlags::from_bits_truncate(flags);
-    if map_flags.contains(MmapFlags::from_bits_truncate(MAP_PRIVATE | MAP_SHARED)) {
+    if map_flags.contains(MmapFlags::PRIVATE | MmapFlags::SHARED) {
         return Err(LinuxError::EINVAL);
     }
 
@@ -88,13 +92,12 @@ pub fn sys_mmap(
         addr, length, permission_flags, map_flags, fd, offset
     );
 
-    let page_size = if flags & MAP_HUGETLB == 0 {
-        PageSize::Size4K
+    let page_size = if map_flags.contains(MmapFlags::HUGE_1GB) {
+        PageSize::Size1G
+    } else if map_flags.contains(MmapFlags::HUGE) {
+        PageSize::Size2M
     } else {
-        match flags & MAP_HUGE_MASK << MAP_HUGE_SHIFT {
-            MAP_HUGE_1GB => PageSize::Size1G,
-            _ => PageSize::Size2M,
-        }
+        PageSize::Size4K
     };
 
     let start = addr.align_down(page_size);

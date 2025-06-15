@@ -139,11 +139,11 @@ pub fn sys_getdents64(fd: i32, buf: UserPtr<u8>, len: usize) -> LinuxResult<isiz
     let dir = Directory::from_fd(fd)?;
 
     let mut last_dirent = dir.last_dirent();
-    if let Some(ent) = last_dirent.take() {
-        if !buffer.write_entry(ent.entry_type().into(), ent.name_as_bytes()) {
-            *last_dirent = Some(ent);
-            return Err(LinuxError::EINVAL);
-        }
+    if let Some(ent) = last_dirent.take()
+        && !buffer.write_entry(ent.entry_type().into(), ent.name_as_bytes())
+    {
+        *last_dirent = Some(ent);
+        return Err(LinuxError::EINVAL);
     }
 
     let mut inner = dir.inner();
