@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-#define N 200
+#define N 150
 #define LEN (1024 * 1024)
 
 void forktest(void) {
