@@ -153,7 +153,7 @@ pub fn sys_clone(
             curr.task_ext().process_data().aspace.clone()
         } else {
             let mut aspace = curr.task_ext().process_data().aspace.lock();
-            let mut aspace = aspace.copy_with_cow()?;
+            let mut aspace = aspace.try_clone()?;
             copy_from_kernel(&mut aspace)?;
             Arc::new(Mutex::new(aspace))
         };

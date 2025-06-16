@@ -2,13 +2,22 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #define N 150
+#define LEN (1024 * 1024)
 
 void forktest(void) {
   int n, pid;
 
   printf("fork test\n");
+
+  char *ptr = mmap(NULL, LEN * sizeof(char), PROT_READ | PROT_WRITE,
+                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  for (n = 0; n < LEN; n++) {
+      *(ptr + n) = 'a';
+  }
 
   for (n = 0; n < N; n++) {
     pid = fork();
