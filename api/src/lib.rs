@@ -9,8 +9,8 @@ pub mod file;
 pub mod path;
 pub mod ptr;
 pub mod signal;
-pub mod time;
 pub mod socket;
+pub mod time;
 
 mod imp;
 pub use imp::*;
