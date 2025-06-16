@@ -9,7 +9,6 @@ pub mod file;
 pub mod path;
 pub mod ptr;
 pub mod signal;
-pub mod sockaddr;
 pub mod time;
 pub mod socket;
 
