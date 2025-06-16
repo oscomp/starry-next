@@ -1,6 +1,6 @@
 use alloc::vec;
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageSize};
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
     MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
@@ -108,11 +108,13 @@ pub fn sys_mmap(
                 VirtAddr::from(start),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                PageSize::Size4K,
             )
             .or(aspace.find_free_area(
                 aspace.base(),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                PageSize::Size4K,
             ))
             .ok_or(LinuxError::ENOMEM)?
     };
@@ -128,6 +130,7 @@ pub fn sys_mmap(
         aligned_length,
         permission_flags.into(),
         populate,
+        PageSize::Size4K,
     )?;
 
     if populate {
@@ -141,7 +144,7 @@ pub fn sys_mmap(
         let length = core::cmp::min(length, file_size - offset);
         let mut buf = vec![0u8; length];
         file.read_at(offset as u64, &mut buf)?;
-        aspace.write(start_addr, &buf)?;
+        aspace.write(start_addr, PageSize::Size4K, &buf)?;
     }
     Ok(start_addr.as_usize() as _)
 }
