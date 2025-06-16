@@ -26,7 +26,7 @@ axconfig = { git = "https://github.com/oscomp/arceos.git" }
 axfs = { git = "https://github.com/oscomp/arceos.git" }
 axhal = { git = "https://github.com/oscomp/arceos.git", features = ["uspace"] }
 axlog = { git = "https://github.com/oscomp/arceos.git" }
-axmm = { git = "https://github.com/oscomp/arceos.git" }
+axmm = { git = "https://github.com/oscomp/arceos.git", features = ["cow"] }
 axnet = { git = "https://github.com/oscomp/arceos.git" }
 axns = { git = "https://github.com/oscomp/arceos.git", features = [
     "thread-local",
