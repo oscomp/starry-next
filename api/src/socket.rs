@@ -65,17 +65,14 @@ impl SocketAddrExt for SocketAddr {
         {
             return Err(LinuxError::EINVAL);
         }
-
-        let storage = copy_sockaddr_from_user(addr, addrlen)?;
+        let src_addr = addr.get_as_ref()?;
         let family = unsafe {
-            storage
-                .assume_init_ref()
+            src_addr
                 .__storage
                 .__bindgen_anon_1
                 .__bindgen_anon_1
                 .ss_family as u32
         };
-
         match family {
             AF_INET => SocketAddrV4::read_from_user(addr, addrlen).map(SocketAddr::V4),
             AF_INET6 => SocketAddrV6::read_from_user(addr, addrlen).map(SocketAddr::V6),
@@ -104,8 +101,8 @@ impl SocketAddrExt for SocketAddr {
     /// Returns `AF_INET` for IPv4 addresses or `AF_INET6` for IPv6 addresses.
     fn family(&self) -> u16 {
         match self {
-            SocketAddr::V4(_) => AF_INET as u16,
-            SocketAddr::V6(_) => AF_INET6 as u16,
+            SocketAddr::V4(v4) => v4.family(),
+            SocketAddr::V6(v6) => v6.family(),
         }
     }
 
@@ -115,8 +112,8 @@ impl SocketAddrExt for SocketAddr {
     /// encoded as a [`sockaddr_in`] (for IPv4) or [`sockaddr_in6`] (for IPv6) structure.
     fn addr_len(&self) -> socklen_t {
         match self {
-            SocketAddr::V4(_) => size_of::<sockaddr_in>() as socklen_t,
-            SocketAddr::V6(_) => size_of::<sockaddr_in6>() as socklen_t,
+            SocketAddr::V4(v4) => v4.addr_len(),
+            SocketAddr::V6(v6) => v6.addr_len(),
         }
     }
 }
