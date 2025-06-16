@@ -143,7 +143,7 @@ impl SocketAddrExt for SocketAddrV4 {
         if addr.is_null() {
             return Err(LinuxError::EINVAL);
         }
-        let dst_addr: &'static mut sockaddr = addr.get_as_mut()?;
+        let dst_addr = addr.get_as_mut()?;
         let len = size_of::<sockaddr_in>() as socklen_t;
         let sockin_addr = sockaddr_in {
             sin_family: AF_INET as _,
@@ -201,7 +201,7 @@ impl SocketAddrExt for SocketAddrV6 {
         if addr.is_null() {
             return Err(LinuxError::EINVAL);
         }
-        let dst_addr: &'static mut sockaddr = addr.get_as_mut()?;
+        let dst_addr = addr.get_as_mut()?;
         let len = size_of::<sockaddr_in6>() as socklen_t;
         let sockin_addr = sockaddr_in6 {
             sin6_family: AF_INET6 as _,
