@@ -60,6 +60,7 @@ export PATH=`pwd`/x86_64-linux-musl-cross/bin:`pwd`/aarch64-linux-musl-cross/bin
 ```
 
 #### 2. Dependencies for running apps
+Note: If the developer wants to install qemu from the source code, please refer to [Dockerfile](.devcontainer/Dockerfile).
 
 ```bash
 # for Debian/Ubuntu
@@ -101,7 +102,7 @@ make ARCH=aarch64 AX_TESTCASE=nimbos BLK=y NET=y FEATURES=fp_simd ACCEL=n run
 # Run Loongarch64 example
 make ARCH=loongarch64 AX_TESTCASE=nimbos user_apps
 make ARCH=loongarch64 defconfig
-make ARCH=loongarch64 AX_TESTCASE=nimbos BLK=y NET=y ACCEL=n run
+make ARCH=loongarch64 AX_TESTCASE=nimbos BLK=y NET=y FEATURES=fp_simd ACCEL=n run
 
 # Run another example (libc testcases)
 make ARCH=riscv64 AX_TESTCASE=libc user_apps
