@@ -124,9 +124,7 @@ impl SocketAddrExt for SocketAddrV4 {
         if addrlen < size_of::<sockaddr_in>() as socklen_t {
             return Err(LinuxError::EINVAL);
         }
-
         let storage = copy_sockaddr_from_user(addr, addrlen)?;
-
         let addr_in = unsafe { &*(storage.as_ptr() as *const sockaddr_in) };
         if addr_in.sin_family as u32 != AF_INET {
             return Err(LinuxError::EAFNOSUPPORT);
@@ -181,9 +179,7 @@ impl SocketAddrExt for SocketAddrV6 {
         if addrlen < size_of::<sockaddr_in6>() as socklen_t {
             return Err(LinuxError::EINVAL);
         }
-
         let storage = copy_sockaddr_from_user(addr, addrlen)?;
-
         let addr_in6 = unsafe { &*(storage.as_ptr() as *const sockaddr_in6) };
         if addr_in6.sin6_family as u32 != AF_INET6 {
             return Err(LinuxError::EAFNOSUPPORT);
