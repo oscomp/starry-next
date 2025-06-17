@@ -60,25 +60,7 @@ export PATH=`pwd`/x86_64-linux-musl-cross/bin:`pwd`/aarch64-linux-musl-cross/bin
 ```
 
 #### 2. Dependencies for running apps
-
-```bash
-# install qemu-9.2.1 from the source code
-sudo apt update
-sudo apt install -y \
-  build-essential git pkg-config libglib2.0-dev libpixman-1-dev libfdt-dev \
-  libaio-dev libcap-ng-dev libseccomp-dev libattr1-dev libcurl4-openssl-dev \
-  libgtk-3-dev libvte-2.91-dev libspice-server-dev libusb-1.0-0-dev \
-  libncurses5-dev zlib1g-dev libssl-dev python3
-
-wget https://download.qemu.org/qemu-9.2.1.tar.xz
-tar xf qemu-9.2.1.tar.xz \
-    && cd qemu-9.2.1 \
-    && ./configure --prefix=/qemu-bin-9.2.1 \
-        --target-list=loongarch64-softmmu,riscv64-softmmu,aarch64-softmmu,x86_64-softmmu,loongarch64-linux-user,riscv64-linux-user,aarch64-linux-user,x86_64-linux-user \
-        --enable-gcov --enable-debug --enable-slirp \
-    && make -j$(nproc) \
-    && make install
-```
+Note: If the developer want to install qemu from the source code, please refer to `.devcontainer/Dockerfile`.
 
 ```bash
 # for Debian/Ubuntu
