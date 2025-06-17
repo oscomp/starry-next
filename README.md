@@ -60,7 +60,7 @@ export PATH=`pwd`/x86_64-linux-musl-cross/bin:`pwd`/aarch64-linux-musl-cross/bin
 ```
 
 #### 2. Dependencies for running apps
-Note: If the developer want to install qemu from the source code, please refer to `.devcontainer/Dockerfile`.
+Note: If the developer wants to install qemu from the source code, please refer to [Dockerfile](./devcontainer/Dokcerfile).
 
 ```bash
 # for Debian/Ubuntu
