@@ -62,6 +62,25 @@ export PATH=`pwd`/x86_64-linux-musl-cross/bin:`pwd`/aarch64-linux-musl-cross/bin
 #### 2. Dependencies for running apps
 
 ```bash
+# install qemu-9.2.1 from the source code
+sudo apt update
+sudo apt install -y \
+  build-essential git pkg-config libglib2.0-dev libpixman-1-dev libfdt-dev \
+  libaio-dev libcap-ng-dev libseccomp-dev libattr1-dev libcurl4-openssl-dev \
+  libgtk-3-dev libvte-2.91-dev libspice-server-dev libusb-1.0-0-dev \
+  libncurses5-dev zlib1g-dev libssl-dev python3
+
+wget https://download.qemu.org/qemu-9.2.1.tar.xz
+tar xf qemu-9.2.1.tar.xz \
+    && cd qemu-9.2.1 \
+    && ./configure --prefix=/qemu-bin-9.2.1 \
+        --target-list=loongarch64-softmmu,riscv64-softmmu,aarch64-softmmu,x86_64-softmmu,loongarch64-linux-user,riscv64-linux-user,aarch64-linux-user,x86_64-linux-user \
+        --enable-gcov --enable-debug --enable-slirp \
+    && make -j$(nproc) \
+    && make install
+```
+
+```bash
 # for Debian/Ubuntu
 sudo apt-get install qemu-system
 ```
@@ -101,7 +120,7 @@ make ARCH=aarch64 AX_TESTCASE=nimbos BLK=y NET=y FEATURES=fp_simd ACCEL=n run
 # Run Loongarch64 example
 make ARCH=loongarch64 AX_TESTCASE=nimbos user_apps
 make ARCH=loongarch64 defconfig
-make ARCH=loongarch64 AX_TESTCASE=nimbos BLK=y NET=y ACCEL=n run
+make ARCH=loongarch64 AX_TESTCASE=nimbos BLK=y NET=y FEATURES=fp_simd ACCEL=n run
 
 # Run another example (libc testcases)
 make ARCH=riscv64 AX_TESTCASE=libc user_apps
