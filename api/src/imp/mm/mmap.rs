@@ -1,12 +1,13 @@
 use axerrno::{LinuxError, LinuxResult};
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageSize};
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
     MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE, MAP_SHARED,
     MAP_STACK, PROT_EXEC, PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE
 };
-use memory_addr::{VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
 use alloc::vec;
+use linux_raw_sys::general::*;
+use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange, align_up_4k, PAGE_SIZE_4K};
 
 use crate::file::{page_cache_manager, File, FileLike};
 
@@ -63,8 +64,12 @@ bitflags::bitflags! {
         const NORESERVE = MAP_NORESERVE;
         /// Allocation is for a stack.
         const STACK = MAP_STACK;
-
+        /// Allocation s populate
         const POPULATE = MAP_POPULATE;
+        /// Huge page
+        const HUGE = MAP_HUGETLB;
+        /// Huge page 1g size
+        const HUGE_1GB = MAP_HUGETLB | MAP_HUGE_1GB;
     }
 }
 
@@ -115,8 +120,21 @@ pub fn sys_mmap(
         return Err(LinuxError::EINVAL);
     }
 
-    let start = memory_addr::align_down_4k(addr);
-    let end = memory_addr::align_up_4k(addr + length);
+    info!(
+        "sys_mmap: addr: {:x?}, length: {:x?}, prot: {:?}, flags: {:?}, fd: {:?}, offset: {:?}",
+        addr, length, permission_flags, map_flags, fd, offset
+    );
+
+    let page_size = if map_flags.contains(MmapFlags::HUGE_1GB) {
+        PageSize::Size1G
+    } else if map_flags.contains(MmapFlags::HUGE) {
+        PageSize::Size2M
+    } else {
+        PageSize::Size4K
+    };
+
+    let start = addr.align_down(page_size);
+    let end = (addr + length).align_up(page_size);
     let aligned_length = end - start;
 
     // 分配虚拟地址段
@@ -133,11 +151,13 @@ pub fn sys_mmap(
                 VirtAddr::from(start),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                page_size,
             )
             .or(aspace.find_free_area(
                 aspace.base(),
                 aligned_length,
                 VirtAddrRange::new(aspace.base(), aspace.end()),
+                page_size,
             ))
             .ok_or(LinuxError::ENOMEM)?
     };
@@ -156,14 +176,26 @@ pub fn sys_mmap(
 
     if anonymous {
         // 匿名映射
-        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate)?;
-
-        if !private {
-            panic!("Not implement");
-        }
+        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), populate, page_size)?;
     } else {
-        // 文件映射，在 aspace 里面都认为 populate == false，即不通过 aspace 分配页面
-        aspace.map_alloc(start_addr, aligned_length, permission_flags.into(), false)?;
+        // 目前只有私有文件 populate 映射支持大页，因为不需要页缓存
+        if populate && private {
+            aspace.map_alloc(
+                start_addr, 
+                aligned_length, 
+                permission_flags.into(), 
+                false, 
+                page_size,
+            )?;
+        } else {
+            aspace.map_alloc(
+                start_addr, 
+                aligned_length, 
+                permission_flags.into(), 
+                false, 
+                PageSize::Size4K
+            )?;
+        }
 
         if populate {
             if private {
@@ -177,7 +209,7 @@ pub fn sys_mmap(
                 let length = core::cmp::min(length, file_size - offset);
                 let mut buf = vec![0u8; length];
                 file.read_at(&mut buf, offset)?;
-                aspace.write(start_addr, &buf)?;
+                aspace.write(start_addr, page_size, &buf)?;
             } else {
                 // 文件共享映射的 populate: 交由 page cache 完成加载
                 let cache_manager = page_cache_manager();
@@ -218,8 +250,9 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     
     // 在 aspace 中移除 VMA，匿名映射修改页表
     let mut aspace = process_data.aspace.lock();
-    let length = memory_addr::align_up_4k(length);
-    aspace.unmap(VirtAddr::from(addr), length).unwrap();
+    let length = align_up_4k(length);
+    let start_addr = VirtAddr::from(addr);
+    aspace.unmap(start_addr, length)?;
     axhal::arch::flush_tlb(None);
     Ok(0)
 }
@@ -236,7 +269,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: u32) -> LinuxResult<isize>
     let curr = current();
     let process_data = curr.task_ext().process_data();
     let mut aspace = process_data.aspace.lock();
-    let length = memory_addr::align_up_4k(length);
+    let length = align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
     aspace.protect(start_addr, length, permission_flags.into())?;
 
@@ -307,7 +340,7 @@ pub fn lazy_map_file(vaddr: VirtAddr, access_flags: MappingFlags) -> bool {
         let curr = current();
         let process_data = curr.task_ext().process_data();
         let aspace = process_data.aspace.lock();
-        match aspace.write(aligned_vaddr, &buf) {
+        match aspace.write(aligned_vaddr, PageSize::Size4K, &buf) {
             Ok(_) => (),
             _ => return false,
         }

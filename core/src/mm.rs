@@ -5,7 +5,10 @@ use axerrno::{LinuxError, LinuxResult};
 
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec, collections::btree_map::BTreeMap};
 use axerrno::{AxError, AxResult};
-use axhal::{mem::virt_to_phys, paging::MappingFlags};
+use axhal::{
+    mem::virt_to_phys,
+    paging::{MappingFlags, PageSize},
+};
 use axmm::{AddrSpace, kernel_aspace};
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
@@ -40,6 +43,7 @@ pub fn map_trampoline(aspace: &mut AddrSpace) -> AxResult {
         signal_trampoline_paddr,
         PAGE_SIZE_4K,
         MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
+        PageSize::Size4K,
     )?;
     Ok(())
 }
@@ -79,12 +83,13 @@ fn map_elf(uspace: &mut AddrSpace, elf: &ElfFile) -> AxResult<(VirtAddr, [AuxvEn
             seg_align_size,
             segement.flags,
             true,
+            PageSize::Size4K,
         )?;
         let seg_data = elf
             .input
             .get(segement.offset..segement.offset + segement.filesz as usize)
             .ok_or(AxError::InvalidData)?;
-        uspace.write(segement.vaddr, seg_data)?;
+        uspace.write(segement.vaddr, PageSize::Size4K, seg_data)?;
         // TDOO: flush the I-cache
     }
 
@@ -179,6 +184,7 @@ pub fn load_user_app(
         ustack_size,
         MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
         true,
+        PageSize::Size4K,
     )?;
 
     let heap_start = VirtAddr::from_usize(axconfig::plat::USER_HEAP_BASE);
@@ -188,11 +194,12 @@ pub fn load_user_app(
         heap_size,
         MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
         true,
+        PageSize::Size4K,
     )?;
 
     let user_sp = ustack_end - stack_data.len();
 
-    uspace.write(user_sp, stack_data.as_slice())?;
+    uspace.write(user_sp, PageSize::Size4K, stack_data.as_slice())?;
 
     Ok((entry, user_sp))
 }
