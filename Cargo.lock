@@ -349,6 +349,7 @@ dependencies = [
  "axerrno",
  "axhal",
  "kspin",
+ "lazy_static",
  "lazyinit",
  "log",
  "memory_addr",
@@ -829,6 +830,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+dependencies = [
+ "spin",
+]
+
+[[package]]
 name = "lazyinit"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -982,7 +992,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 [[package]]
 name = "page_table_entry"
 version = "0.5.3"
-source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=19ededd#19ededdb806ab3b22efb4880661790524fa421a5"
+source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=5c222f2#5c222f2199a6c566e9009dca8d86a589b4f66757"
 dependencies = [
  "aarch64-cpu",
  "bitflags 2.9.0",
@@ -993,7 +1003,7 @@ dependencies = [
 [[package]]
 name = "page_table_multiarch"
 version = "0.5.3"
-source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=19ededd#19ededdb806ab3b22efb4880661790524fa421a5"
+source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=5c222f2#5c222f2199a6c566e9009dca8d86a589b4f66757"
 dependencies = [
  "log",
  "memory_addr",
