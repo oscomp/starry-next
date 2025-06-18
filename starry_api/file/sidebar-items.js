@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AX_FILE_LIMIT"],"enum":["Socket"],"fn":["add_file_like","close_file_like","get_file_like","init_stdio"],"struct":["Directory","FD_TABLE","File","Kstat","Pipe"],"trait":["FileLike"]};

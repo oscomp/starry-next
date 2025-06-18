@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["access_user_memory","copy_from_kernel","is_accessing_user_memory","load_user_app","map_trampoline","new_user_aspace_empty"]};
