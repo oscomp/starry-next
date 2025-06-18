@@ -1,15 +1,24 @@
-use core::{any::Any, ffi::c_int, sync::atomic::{AtomicUsize, Ordering}};
+use core::{
+    any::Any,
+    ffi::c_int,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
-use alloc::{string::String, sync::{Arc, Weak}};
+use alloc::{
+    string::String,
+    sync::{Arc, Weak},
+};
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::DirEntry;
 use axio::PollState;
+use axio::SeekFrom;
 use axsync::{Mutex, MutexGuard};
 use linux_raw_sys::general::S_IFDIR;
-use axio::SeekFrom;
 
-
-use super::{get_file_like, page_cache::{PageCache, page_cache_manager}, FileLike, Kstat};
+use super::{
+    FileLike, Kstat, get_file_like,
+    page_cache::{PageCache, page_cache_manager},
+};
 
 /// File wrapper for `axfs::fops::File`.
 pub struct File {
@@ -24,9 +33,9 @@ pub struct File {
 impl File {
     pub fn new(
         inner: Option<Arc<Mutex<axfs::fops::File>>>,
-        path: String, 
+        path: String,
         is_direct: bool,
-        cache: Weak<PageCache>
+        cache: Weak<PageCache>,
     ) -> Self {
         debug!("Starry-api open file {}", path);
         let size = {
@@ -84,7 +93,8 @@ impl File {
             SeekFrom::Start(pos) => Some(pos),
             SeekFrom::Current(off) => offset.checked_add_signed(off),
             SeekFrom::End(off) => size.checked_add_signed(off),
-        }.unwrap();
+        }
+        .unwrap();
         self.offset.store(new_offset as usize, Ordering::SeqCst);
         Ok(new_offset as isize)
     }
@@ -101,7 +111,7 @@ impl File {
         if self.is_direct {
             return Ok(self.inner().read_at(offset as u64, buf)?);
         }
-        
+
         let cache = self.get_cache();
         Ok(cache.read_at(offset, buf))
     }
@@ -110,7 +120,7 @@ impl File {
         if self.is_direct {
             return Ok(self.inner().write_at(offset as u64, buf)?);
         }
-        
+
         let cache = self.get_cache();
         Ok(cache.write_at(offset, buf))
     }
@@ -140,7 +150,7 @@ impl FileLike for File {
         if self.is_direct {
             return Ok(self.inner().read(buf)?);
         }
-        
+
         let cache = self.get_cache();
         let offset = self.offset.load(Ordering::SeqCst);
         let len = cache.write_at(offset, buf);
@@ -152,7 +162,7 @@ impl FileLike for File {
         if self.is_direct {
             return Ok(self.inner().write(buf)?);
         }
-        
+
         let cache = self.get_cache();
         let offset = self.offset.load(Ordering::SeqCst);
         let len = cache.write_at(offset, buf);
@@ -166,7 +176,7 @@ impl FileLike for File {
             let cache = self.get_cache();
             return cache.stat();
         }
-        
+
         let metadata = self.inner().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;

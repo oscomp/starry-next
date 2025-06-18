@@ -1,19 +1,19 @@
 //! User address space management.
 
-use core::ffi::CStr;
 use axerrno::{LinuxError, LinuxResult};
+use core::ffi::CStr;
 
-use alloc::{borrow::ToOwned, string::String, vec, vec::Vec, collections::btree_map::BTreeMap};
+use alloc::{borrow::ToOwned, collections::btree_map::BTreeMap, string::String, vec, vec::Vec};
 use axerrno::{AxError, AxResult};
 use axhal::{
     mem::virt_to_phys,
     paging::{MappingFlags, PageSize},
 };
 use axmm::{AddrSpace, kernel_aspace};
+use axsync::Mutex;
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
-use axsync::Mutex;
 
 /// Creates a new empty user address space.
 pub fn new_user_aspace_empty() -> AxResult<AddrSpace> {
@@ -143,22 +143,21 @@ pub fn load_user_app(
 
         let mut interp_path = axfs::api::canonicalize(
             CStr::from_bytes_with_nul(interp)
-            .map_err(|_| AxError::InvalidData)?
-            .to_str()
-            .map_err(|_| AxError::InvalidData)?,
+                .map_err(|_| AxError::InvalidData)?
+                .to_str()
+                .map_err(|_| AxError::InvalidData)?,
         )?;
-        
+
         if interp_path == "/lib/ld-linux-riscv64-lp64.so.1"
-        || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
-        || interp_path == "/lib64/ld-linux-x86-64.so.2"
-        || interp_path == "/lib/ld-linux-aarch64.so.1"
-        || interp_path == "/lib/ld-musl-riscv64.so.1"
-        
+            || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
+            || interp_path == "/lib64/ld-linux-x86-64.so.2"
+            || interp_path == "/lib/ld-linux-aarch64.so.1"
+            || interp_path == "/lib/ld-musl-riscv64.so.1"
         {
             // TODO: Use soft link
             interp_path = String::from("/musl/lib/libc.so");
         }
-        
+
         // Set the first argument to the path of the user app.
         let mut new_args = vec![interp_path];
         new_args.extend_from_slice(args);
@@ -231,7 +230,7 @@ pub struct VirtMemArea {
     // VMA 长度
     pub length: usize,
     // fd == -1 表示匿名映射
-    pub fd: i32,           
+    pub fd: i32,
     // VMA 起始地址对应的文件偏移量
     pub offset: usize,
     // 是否共享
@@ -239,7 +238,7 @@ pub struct VirtMemArea {
 }
 
 /// 作用：根据虚拟地址找到对应的 Vitual Memory Area 信息
-/// 
+///
 /// 主要场景：
 ///   1. 处理因 mmap lazy-alloc 产生的 page fault，
 ///   2. 在页面置换时实现页表反向映射，根据虚拟地址找到对应的 Vitual Memory Area 信息
@@ -257,22 +256,38 @@ impl ProcessVMAManager {
     }
 
     /// 加入一个 VMA
-    pub fn add_area(&self, start: VirtAddr, length: usize, fd: i32, offset: usize, shared: bool) -> LinuxResult<isize> {
+    pub fn add_area(
+        &self,
+        start: VirtAddr,
+        length: usize,
+        fd: i32,
+        offset: usize,
+        shared: bool,
+    ) -> LinuxResult<isize> {
         let mut areas = self.areas.lock();
         if length == 0 || start.as_usize() % PAGE_SIZE_4K != 0 || offset % PAGE_SIZE_4K != 0 {
             return Err(LinuxError::EINVAL);
         }
-        areas.insert(start, VirtMemArea { start: start, length, fd, offset, shared });
+        areas.insert(
+            start,
+            VirtMemArea {
+                start: start,
+                length,
+                fd,
+                offset,
+                shared,
+            },
+        );
         Ok(0)
     }
-    
+
     /// 删除一个 VMA
     pub fn remove_area(&self, start: VirtAddr) -> LinuxResult<isize> {
         let mut areas = self.areas.lock();
         areas.remove(&start).unwrap();
         Ok(0)
     }
-    
+
     /// 查询虚拟地址所在的 VMA
     pub fn query(&self, vaddr: VirtAddr) -> Option<VirtMemArea> {
         let areas = self.areas.lock();

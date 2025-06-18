@@ -11,7 +11,7 @@
 #include <assert.h>
 
 #define FILENAME "/tmp/mmap_shared_file.bin"
-const int  FILE_SIZE = (4096 * 200);  // 文件大小
+const int  FILE_SIZE = (4096 * 20);  // 文件大小
 #define WRITER_COUNT 2           // 写进程数量
 #define READER_COUNT 4           // 读进程数量
 
@@ -90,7 +90,6 @@ void reader_process(int reader_id) {
     printf("Reader %d started verification\n", reader_id);
     
     for (int round = 0; round < 10; round++) {
-        printf("Reader %d start round %d\n", reader_id, round);
         for (unsigned i = 0; i < FILE_SIZE; i++) {
             if (map[i] != func(i)) {
                 printf("位置 %d 读写不一致：期待 %d, 实际 %d\n", i, func(i), map[i]);

@@ -80,7 +80,12 @@ pub fn sys_write(fd: i32, buf: UserConstPtr<u8>, len: usize) -> LinuxResult<isiz
     Ok(get_file_like(fd)?.write(buf)? as _)
 }
 
-pub fn sys_pwrite(fd: c_int, buf: UserConstPtr<u8>, len: usize, offset: usize) -> LinuxResult<isize> {
+pub fn sys_pwrite(
+    fd: c_int,
+    buf: UserConstPtr<u8>,
+    len: usize,
+    offset: usize,
+) -> LinuxResult<isize> {
     let buf = buf.get_as_slice(len)?;
     debug!(
         "sys_pwrite <= fd: {}, buf: {:p}, len: {}",
@@ -138,7 +143,6 @@ pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResul
     };
     File::from_fd(fd)?.seek(pos)
 }
-
 
 pub fn sys_fsync(fd: c_int) -> LinuxResult<isize> {
     let file = File::from_fd(fd)?;

@@ -1,1 +1,5 @@
-mmap_c
+helloworld_c
+sleep_c
+signal_c
+concurrent_mmap_c
+concurrent_io_c

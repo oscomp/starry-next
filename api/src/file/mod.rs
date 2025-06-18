@@ -1,8 +1,8 @@
 mod fs;
 mod net;
+mod page_cache;
 mod pipe;
 mod stdio;
-mod page_cache;
 
 use core::{any::Any, ffi::c_int};
 
@@ -17,8 +17,8 @@ use spin::RwLock;
 pub use self::{
     fs::{Directory, File},
     net::Socket,
-    pipe::Pipe,
     page_cache::page_cache_manager,
+    pipe::Pipe,
 };
 
 pub const AX_FILE_LIMIT: usize = 1024;

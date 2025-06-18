@@ -1,19 +1,23 @@
 use core::{
-    ffi::{c_char, c_int}, panic
+    ffi::{c_char, c_int},
+    panic,
 };
 
 use alloc::string::ToString;
+use alloc::sync::{Arc, Weak};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
-use linux_raw_sys::general::{
-    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT, O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY
-};
-use alloc::sync::{Arc, Weak};
 use axsync::Mutex;
+use linux_raw_sys::general::{
+    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT,
+    O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
+};
 
 use crate::{
-    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like, 
-        page_cache_manager},
+    file::{
+        Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like,
+        page_cache_manager,
+    },
     path::handle_file_path,
     ptr::UserConstPtr,
 };
@@ -76,7 +80,7 @@ pub fn sys_openat(
         Some(Directory::from_fd(dirfd)?)
     };
     let real_path = handle_file_path(dirfd, path)?;
-    
+
     if !opts.has_directory() {
         match dir.as_ref().map_or_else(
             || axfs::fops::File::open(real_path.as_str(), &opts),
@@ -96,9 +100,9 @@ pub fn sys_openat(
                         manager.open_page_cache(&path)
                     };
                     File::new(None, path, false, cache).add_to_fd_table()?
-                };                
+                };
                 return Ok(fd as _);
-            },
+            }
             Err(AxError::IsADirectory) => {}
             Err(e) => {
                 error!("sys_open at {} failed: {}", path, e);

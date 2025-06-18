@@ -30,7 +30,7 @@ use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
 
-use crate::{futex::FutexTable, time::TimeStat, mm::ProcessVMAManager};
+use crate::{futex::FutexTable, mm::ProcessVMAManager, time::TimeStat};
 
 /// Create a new user task.
 pub fn new_user_task(

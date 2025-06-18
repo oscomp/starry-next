@@ -1,10 +1,10 @@
 use core::ffi::{c_char, c_int};
 
+use alloc::sync::{Arc, Weak};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
-use linux_raw_sys::general::{AT_EMPTY_PATH, stat, statx};
-use alloc::sync::{Arc, Weak};
 use axsync::Mutex;
+use linux_raw_sys::general::{AT_EMPTY_PATH, stat, statx};
 
 use crate::{
     file::{Directory, File, FileLike, Kstat, get_file_like},
@@ -15,13 +15,13 @@ use crate::{
 fn stat_at_path(path: &str) -> LinuxResult<Kstat> {
     let opts = OpenOptions::new().set_read(true).set_direct(true);
     match axfs::fops::File::open(path, &opts) {
-        Ok(file) => {
-            File::new(
-                Some(Arc::new(Mutex::new(file))), 
-                path.into(), 
-                false, 
-                Weak::new()).stat()
-        },
+        Ok(file) => File::new(
+            Some(Arc::new(Mutex::new(file))),
+            path.into(),
+            false,
+            Weak::new(),
+        )
+        .stat(),
         Err(AxError::IsADirectory) => {
             let dir = axfs::fops::Directory::open_dir(path, &opts)?;
             Directory::new(dir, path.into()).stat()

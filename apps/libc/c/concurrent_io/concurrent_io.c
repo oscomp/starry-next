@@ -79,7 +79,7 @@ void reader_process(int reader_id) {
     
     // 读取文件内容
     for (int round = 0; round < 100; round++) {
-        printf("Reader %d start round %d\n", reader_id, round);
+        // printf("Reader %d start round %d\n", reader_id, round);
         for (int i = reader_id; i < BUFFER_CNT; i += WRITER_COUNT) {
             pread(fd, buffer, BUFFER_LEN, i * BUFFER_LEN);
             for (int j = 0; j < BUFFER_LEN; j++) {
