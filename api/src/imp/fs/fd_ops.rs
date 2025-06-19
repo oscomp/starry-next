@@ -71,7 +71,7 @@ pub fn sys_openat(
     mode: __kernel_mode_t,
 ) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    let opts: OpenOptions = flags_to_options(flags, mode);
+    let opts = flags_to_options(flags, mode);
     debug!("sys_openat <= {} {} {:?}", dirfd, path, opts);
 
     let dir = if path.starts_with('/') || dirfd == AT_FDCWD {
@@ -91,15 +91,15 @@ pub fn sys_openat(
                 let fd = if opts.has_direct() {
                     // 不经过 page cache
                     let file = Arc::new(Mutex::new(axfile));
-                    File::new(Some(file), path, true, Weak::new()).add_to_fd_table()?
+                    File::new_file_direct(path, file).add_to_fd_table()?
                 } else {
-                    drop(axfile);
                     // 经过 page cache
+                    drop(axfile);
                     let cache = {
                         let manager = page_cache_manager();
                         manager.open_page_cache(&path)
                     };
-                    File::new(None, path, false, cache).add_to_fd_table()?
+                    File::new_file_cached(path, cache).add_to_fd_table()?
                 };
                 return Ok(fd as _);
             }

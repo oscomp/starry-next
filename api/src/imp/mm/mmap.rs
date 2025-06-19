@@ -108,10 +108,12 @@ pub fn sys_mmap(
     let permission_flags = MmapProt::from_bits_truncate(prot);
 
     let map_flags = MmapFlags::from_bits_truncate(flags);
-    if !(map_flags.contains(MmapFlags::PRIVATE) ^ map_flags.contains(MmapFlags::SHARED)) {
+    if !(map_flags.contains(MmapFlags::PRIVATE | MmapFlags::SHARED)) {
         error!("MAP FAILED: flags must contains one of SHARED or PRIVATE");
         return Err(LinuxError::EINVAL);
     }
+
+    // TODO: Not satisfy MAP_SHARED_VALIDATE.
 
     let offset = offset as usize;
     if offset % PAGE_SIZE_4K != 0 {
@@ -131,6 +133,16 @@ pub fn sys_mmap(
     } else {
         PageSize::Size4K
     };
+
+    let anonymous = map_flags.contains(MmapFlags::ANONYMOUS) || fd == -1;
+    let private = map_flags.contains(MmapFlags::PRIVATE);
+    let fd = { if anonymous { -1 } else { fd } };
+    let populate = map_flags.contains(MmapFlags::POPULATE);
+
+    if anonymous && fd != -1 {
+        error!("Anonymous mmap must with fd == -1!");
+        return Err(LinuxError::EINVAL);
+    }
 
     let start = addr.align_down(page_size);
     let end = (addr + length).align_up(page_size);
@@ -164,11 +176,6 @@ pub fn sys_mmap(
         "mmap: start_addr = {:#x}, length = {:#x}, fd = {}, offset = {:#x}",
         start_addr, aligned_length, fd, offset
     );
-
-    let anonymous = map_flags.contains(MmapFlags::ANONYMOUS) || fd == -1;
-    let private = map_flags.contains(MmapFlags::PRIVATE);
-    let fd = { if anonymous { -1 } else { fd } };
-    let populate = map_flags.contains(MmapFlags::POPULATE);
 
     // 添加 VMA 信息到 vma_mnager 和 aspace，等访问页面时触发 page fault 后建立页表映射
     let curr = current();
@@ -208,7 +215,7 @@ pub fn sys_mmap(
             if private {
                 // 文件私有映射的 populate: 直接把文件内容加载进 aspace
                 let file = File::from_fd(fd)?;
-                let file_size = file.get_size() as usize;
+                let file_size = file.size() as usize;
                 if offset as usize >= file_size {
                     return Err(LinuxError::EINVAL);
                 }
@@ -336,7 +343,7 @@ pub fn lazy_map_file(vaddr: VirtAddr, access_flags: MappingFlags) -> bool {
             Ok(f) => f,
             _ => return false,
         };
-        let file_size = file.get_size();
+        let file_size = file.size();
         let length = core::cmp::min(PAGE_SIZE_4K, file_size - offset);
         let mut buf = vec![0u8; length];
         match file.read_at(&mut buf, offset) {

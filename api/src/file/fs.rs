@@ -10,8 +10,7 @@ use alloc::{
 };
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::DirEntry;
-use axio::PollState;
-use axio::SeekFrom;
+use axio::{PollState, SeekFrom};
 use axsync::{Mutex, MutexGuard};
 use linux_raw_sys::general::S_IFDIR;
 
@@ -20,174 +19,240 @@ use super::{
     page_cache::{PageCache, page_cache_manager},
 };
 
-/// File wrapper for `axfs::fops::File`.
-pub struct File {
-    inner: Option<Arc<Mutex<axfs::fops::File>>>,
-    path: String,
-    is_direct: bool,
-    cache: Weak<PageCache>,
-    offset: AtomicUsize,
-    size: AtomicUsize,
+/// File wrapper for `axfs::fops::File` with two variants.
+pub enum File {
+    Direct {
+        path: String,
+        inner: Arc<Mutex<axfs::fops::File>>,
+    },
+    Cached {
+        path: String,
+        size: AtomicUsize,
+        offset: AtomicUsize,
+        cache: Weak<PageCache>,
+    },
 }
 
 impl File {
-    pub fn new(
-        inner: Option<Arc<Mutex<axfs::fops::File>>>,
-        path: String,
-        is_direct: bool,
-        cache: Weak<PageCache>,
-    ) -> Self {
-        debug!("Starry-api open file {}", path);
+    pub fn new_file_direct(path: String, inner: Arc<Mutex<axfs::fops::File>>) -> Self {
         let size = {
-            if is_direct {
-                let inner = inner.clone().unwrap();
-                let inner = inner.lock();
-                let metadata = inner.get_attr().unwrap();
-                metadata.size() as usize
-            } else {
-                let cache = cache.upgrade().unwrap();
-                cache.get_file_size()
-            }
+            let inner = inner.clone();
+            let inner = inner.lock();
+            let metadata = inner.get_attr().unwrap();
+            metadata.size() as usize
         };
-        Self {
-            inner,
+        File::Direct {
             path,
-            is_direct,
-            cache,
-            offset: AtomicUsize::new(0),
-            size: AtomicUsize::new(size),
+            inner,
         }
     }
 
-    pub fn get_cache(&self) -> Arc<PageCache> {
-        self.cache.upgrade().unwrap()
+    pub fn new_file_cached(path: String, cache: Weak<PageCache>) -> Self {
+        let size = {
+            let cache = cache.upgrade().unwrap();
+            cache.file_size()
+        };
+        File::Cached {
+            path,
+            size: AtomicUsize::new(size),
+            offset: AtomicUsize::new(0),
+            cache,
+        }
     }
 
-    pub fn get_size(&self) -> usize {
-        self.size.load(Ordering::SeqCst)
+    pub fn size(&self) -> usize {
+        match self {
+            File::Direct { inner, .. } => {
+                let inner = inner.lock();
+                inner.get_attr().unwrap().size() as usize
+            },
+            File::Cached { size, .. } => {
+                size.load(Ordering::Relaxed)
+            }
+        }
+    }
+
+    pub fn offset(&self) -> usize {
+        match self {
+            File::Direct { .. } => {
+                panic!("Please use seek for File::Direc");
+            },
+            File::Cached { offset, .. } => {
+                offset.load(Ordering::Relaxed)
+            }
+        }
     }
 
     /// Get the path of the file.
-    pub fn path(&self) -> &str {
-        &self.path
+    pub fn path(&self) -> &String {
+        match self {
+            File::Direct { path, .. } | File::Cached { path, .. } => path,
+        }
     }
 
-    /// Get the inner node of the file.
+    /// Get the cache of the file. Only available in File::Cached.
+    pub fn cache(&self) -> Arc<PageCache> {
+        match self {
+            File::Direct { .. } => {
+                panic!("File::Direct doesn't have cache.");
+            }
+            File::Cached { cache, .. } => cache.upgrade().unwrap(),
+        }
+    }
+
+    /// Get the inner node of the file. Only available in File::Direct.
     fn inner(&self) -> MutexGuard<axfs::fops::File> {
-        self.inner.as_ref().unwrap().lock()
+        match self {
+            File::Direct { inner, .. } => inner.lock(),
+            File::Cached {  .. } => {
+                panic!("File::Cached doesn't have inner.");
+            }
+        }
     }
 
     pub fn seek(&self, pos: SeekFrom) -> LinuxResult<isize> {
-        if self.is_direct {
-            match self.inner().seek(pos) {
-                Ok(pos) => return Ok(pos as isize),
-                Err(e) => {
-                    error!("Seek failed: {}", e);
-                    return Err(LinuxError::EINVAL);
+        match self {
+            File::Direct { .. } => {
+                let mut inner = self.inner();
+                match inner.seek(pos) {
+                    Ok(pos) => Ok(pos as isize),
+                    Err(e) => {
+                        error!("Seek failed: {}", e);
+                        Err(LinuxError::EINVAL)
+                    }
                 }
             }
+            File::Cached { offset, .. } => {
+                let size = self.size() as u64;
+                let offset_val = offset.load(Ordering::Relaxed) as u64;
+                let new_offset = match pos {
+                    SeekFrom::Start(pos) => Some(pos),
+                    SeekFrom::Current(off) => offset_val.checked_add_signed(off),
+                    SeekFrom::End(off) => size.checked_add_signed(off),
+                }
+                .unwrap_or(0);
+                offset.store(new_offset as usize, Ordering::SeqCst);
+                Ok(new_offset as isize)
+            }
         }
-        let size = self.size.load(Ordering::SeqCst) as u64;
-        let offset = self.offset.load(Ordering::SeqCst) as u64;
-        let new_offset = match pos {
-            SeekFrom::Start(pos) => Some(pos),
-            SeekFrom::Current(off) => offset.checked_add_signed(off),
-            SeekFrom::End(off) => size.checked_add_signed(off),
-        }
-        .unwrap();
-        self.offset.store(new_offset as usize, Ordering::SeqCst);
-        Ok(new_offset as isize)
     }
 
     pub fn fsync(&self) -> LinuxResult<usize> {
-        if self.is_direct {
-            return Ok(0);
+        match self {
+            File::Direct { .. } => Ok(0),
+            File::Cached { .. } => {
+                let cache = self.cache();
+                Ok(cache.sync()?)
+            }
         }
-        let cache = self.get_cache();
-        Ok(cache.sync()?)
     }
 
     pub fn read_at(&self, buf: &mut [u8], offset: usize) -> LinuxResult<usize> {
-        if self.is_direct {
-            return Ok(self.inner().read_at(offset as u64, buf)?);
+        match self {
+            File::Direct { .. } => {
+                let inner = self.inner();
+                Ok(inner.read_at(offset as u64, buf)?)
+            }
+            File::Cached { .. } => {
+                let cache = self.cache();
+                Ok(cache.read_at(offset, buf))
+            }
         }
-
-        let cache = self.get_cache();
-        Ok(cache.read_at(offset, buf))
     }
 
     pub fn write_at(&self, buf: &[u8], offset: usize) -> LinuxResult<usize> {
-        if self.is_direct {
-            return Ok(self.inner().write_at(offset as u64, buf)?);
+        match self {
+            File::Direct { .. } => {
+                let inner = self.inner();
+                Ok(inner.write_at(offset as u64, buf)?)
+            }
+            File::Cached { .. } => {
+                let cache = self.cache();
+                Ok(cache.write_at(offset, buf))
+            }
         }
-
-        let cache = self.get_cache();
-        Ok(cache.write_at(offset, buf))
     }
 
     pub fn truncate(&self, offset: usize) -> LinuxResult<usize> {
-        if self.is_direct {
-            self.inner().truncate(offset as u64)?;
-            return Ok(offset);
+        match self {
+            File::Direct { .. } => {
+                let inner = self.inner();
+                inner.truncate(offset as u64)?;
+                Ok(offset)
+            }
+            File::Cached { .. } => {
+                let cache = self.cache();
+                Ok(cache.truncate(offset) as usize)
+            }
         }
-        let cache = self.get_cache();
-        Ok(cache.truncate(offset) as usize)
     }
 }
 
 impl Drop for File {
     fn drop(&mut self) {
-        debug!("Starry-api drop file {}", self.path);
-        if !self.is_direct {
+        debug!("Starry-api drop file {}", self.path());
+        if let File::Cached { .. } = self {
             let cache_manager = page_cache_manager();
-            cache_manager.close_page_cache(&self.path);
+            cache_manager.close_page_cache(self.path());
         }
     }
 }
 
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize> {
-        if self.is_direct {
-            return Ok(self.inner().read(buf)?);
+        match self {
+            File::Direct { .. } => {
+                let mut inner = self.inner();
+                Ok(inner.read(buf)?)
+            }
+            File::Cached { offset, .. } => {
+                let cache = self.cache();
+                let offset_val = offset.load(Ordering::SeqCst);
+                let len = cache.read_at(offset_val, buf);
+                offset.fetch_add(len, Ordering::SeqCst);
+                Ok(len)
+            }
         }
-
-        let cache = self.get_cache();
-        let offset = self.offset.load(Ordering::SeqCst);
-        let len = cache.write_at(offset, buf);
-        self.offset.fetch_add(len, Ordering::SeqCst);
-        Ok(len)
     }
 
     fn write(&self, buf: &[u8]) -> LinuxResult<usize> {
-        if self.is_direct {
-            return Ok(self.inner().write(buf)?);
+        match self {
+            File::Direct { .. } => {
+                let mut inner = self.inner();
+                Ok(inner.write(buf)?)
+            }
+            File::Cached { offset, size, .. } => {
+                let cache = self.cache();
+                let offset_val = offset.load(Ordering::SeqCst);
+                let len = cache.write_at(offset_val, buf);
+                offset.fetch_add(len, Ordering::SeqCst);
+                size.fetch_max(offset_val + len, Ordering::SeqCst);
+                Ok(len)
+            }
         }
-
-        let cache = self.get_cache();
-        let offset = self.offset.load(Ordering::SeqCst);
-        let len = cache.write_at(offset, buf);
-        self.offset.fetch_add(len, Ordering::SeqCst);
-        self.size.fetch_max(offset + len, Ordering::SeqCst);
-        Ok(len)
     }
 
     fn stat(&self) -> LinuxResult<Kstat> {
-        if !self.is_direct {
-            let cache = self.get_cache();
-            return cache.stat();
+        match self {
+            File::Direct { .. } => {
+                let inner = self.inner();
+                let metadata = inner.get_attr()?;
+                let ty = metadata.file_type() as u8;
+                let perm = metadata.perm().bits() as u32;
+                let size = self.size();
+                Ok(Kstat {
+                    mode: ((ty as u32) << 12) | perm,
+                    size: size as u64,
+                    blocks: metadata.blocks(),
+                    blksize: 512,
+                    ..Default::default()
+                })
+            }
+            File::Cached { .. } => {
+                let cache = self.cache();
+                cache.stat()
+            }
         }
-
-        let metadata = self.inner().get_attr()?;
-        let ty = metadata.file_type() as u8;
-        let perm = metadata.perm().bits() as u32;
-        let size = self.size.load(Ordering::SeqCst);
-        Ok(Kstat {
-            mode: ((ty as u32) << 12) | perm,
-            size: size as u64,
-            blocks: metadata.blocks(),
-            blksize: 512,
-            ..Default::default()
-        })
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

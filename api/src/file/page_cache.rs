@@ -191,7 +191,7 @@ impl Page {
     }
 
     /// 查询本页面的实际起始物理地址
-    fn get_phys_addr(&self) -> PhysAddr {
+    fn phys_addr(&self) -> PhysAddr {
         let vaddr = self.inner.start_vaddr();
         assert!(
             // 保证该页在线性映射区
@@ -307,7 +307,7 @@ impl Page {
             "unmap virt page {} ({}, {:#x})",
             self.page_id, pid, aligned_virt_page
         );
-        
+
         let mut aspace = curr.task_ext().process_data().aspace.lock();
         aspace.force_unmap_page(aligned_virt_page);
         flush_tlb(Some(aligned_virt_page));
@@ -624,7 +624,7 @@ impl PageCache {
     }
 
     /// 获取文件大小
-    pub fn get_file_size(&self) -> usize {
+    pub fn file_size(&self) -> usize {
         self.size.load(Ordering::SeqCst)
     }
 
@@ -868,7 +868,7 @@ impl PageCacheManager {
     // 主要用于 mmap 相关函数，需要根据 fd 找到对应的 page cache
     pub fn fd_cache(&self, fd: i32) -> Arc<PageCache> {
         let file = File::from_fd(fd).unwrap();
-        file.get_cache()
+        file.cache()
     }
 }
 
