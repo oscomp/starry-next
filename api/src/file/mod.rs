@@ -1,5 +1,6 @@
 mod fs;
 mod net;
+mod page_cache;
 mod pipe;
 mod stdio;
 
@@ -16,6 +17,7 @@ use spin::RwLock;
 pub use self::{
     fs::{Directory, File},
     net::Socket,
+    page_cache::page_cache_manager,
     pipe::Pipe,
 };
 
