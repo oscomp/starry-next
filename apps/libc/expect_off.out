@@ -22,3 +22,31 @@ test_sigwait ok3
 test_sigsuspend ok1
 test_sigsuspend ok2
 test_sigsuspend ok3
+
+Starting comprehensive hugepage tests
+========== START test_individual_alloc_rw_free ==========
+4KB page freed
+2MB page freed
+========== END test_individual_alloc_rw_free ==========
+========== START test_batch_alloc_rw_free ==========
+Batch freed 4KB page
+Batch freed 2MB page
+========== END test_batch_alloc_rw_free ==========
+========== START test_interleaved_alloc_rw_free ==========
+Interleaved: freed 4KB page
+Interleaved: freed 2MB page
+========== END test_interleaved_alloc_rw_free ==========
+========== START test_eager_vs_lazy_allocation ==========
+4KB eager allocation completed
+4KB lazy allocation completed
+2MB eager allocation completed
+2MB lazy allocation completed
+All eager/lazy allocations freed
+========== END test_eager_vs_lazy_allocation ==========
+========== START test_file_mapping_hugepages ==========
+========== END test_file_mapping_hugepages ==========
+========== START test_linear_mapping ==========
+4KB linear mapping freed
+2MB linear mapping freed
+========== END test_linear_mapping ==========
+All hugepage tests completed successfully!
