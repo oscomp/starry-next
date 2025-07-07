@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
-use axhal::arch::{TrapFrame, UspaceContext};
+use axhal::context::{TrapFrame, UspaceContext};
 use axprocess::Pid;
 use axsignal::Signo;
 use axsync::Mutex;

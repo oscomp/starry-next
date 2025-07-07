@@ -1,6 +1,6 @@
 use axerrno::LinuxError;
 use axhal::{
-    arch::TrapFrame,
+    context::TrapFrame,
     trap::{SYSCALL, register_trap_handler},
 };
 use starry_api::*;

@@ -14,10 +14,10 @@ use alloc::{
 };
 use axerrno::{LinuxError, LinuxResult};
 use axhal::{
-    arch::UspaceContext,
+    context::UspaceContext,
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
 };
-use axmm::{AddrSpace, kernel_aspace};
+use axmm::AddrSpace;
 use axns::{AxNamespace, AxNamespaceIf};
 use axprocess::{Pid, Process, ProcessGroup, Session, Thread};
 use axsignal::{
@@ -26,7 +26,6 @@ use axsignal::{
 };
 use axsync::{Mutex, RawMutex};
 use axtask::{TaskExtRef, TaskInner, WaitQueue, current};
-use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
 
@@ -55,7 +54,7 @@ pub fn new_user_task(
             unsafe { uctx.enter_uspace(kstack_top) }
         },
         name.into(),
-        axconfig::plat::KERNEL_STACK_SIZE,
+        crate::config::KERNEL_STACK_SIZE,
     )
 }
 
@@ -224,15 +223,15 @@ impl ProcessData {
             exe_path: RwLock::new(exe_path),
             aspace,
             ns: AxNamespace::new_thread_local(),
-            heap_bottom: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
-            heap_top: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
+            heap_bottom: AtomicUsize::new(crate::config::USER_HEAP_BASE),
+            heap_top: AtomicUsize::new(crate::config::USER_HEAP_BASE),
 
             child_exit_wq: WaitQueue::new(),
             exit_signal,
 
             signal: Arc::new(ProcessSignalManager::new(
                 signal_actions,
-                axconfig::plat::SIGNAL_TRAMPOLINE,
+                crate::config::SIGNAL_TRAMPOLINE,
             )),
 
             futex_table: FutexTable::new(),
@@ -263,18 +262,6 @@ impl ProcessData {
     /// signal other than SIGCHLD to its parent upon termination.
     pub fn is_clone_child(&self) -> bool {
         self.exit_signal != Some(Signo::SIGCHLD)
-    }
-}
-
-impl Drop for ProcessData {
-    fn drop(&mut self) {
-        if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
-            // See [`crate::new_user_aspace`]
-            let kernel = kernel_aspace().lock();
-            self.aspace
-                .lock()
-                .clear_mappings(VirtAddrRange::from_start_size(kernel.base(), kernel.size()));
-        }
     }
 }
 
