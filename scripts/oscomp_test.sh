@@ -90,7 +90,7 @@ fi
 
 cp sdcard-$ARCH.img $AX_ROOT/disk.img
 
-ARG="AX_TESTCASE=oscomp ARCH=$ARCH EXTRA_CONFIG=../configs/$ARCH.toml BLK=y NET=y FEATURES=lwext4_rs SMP=4 ACCEL=n LOG=off"
+ARG="AX_TESTCASE=oscomp ARCH=$ARCH BLK=y NET=y FEATURES=lwext4_rs SMP=4 ACCEL=n LOG=off"
 
 echo -e "${GREEN_C}ARGS:${END_C} $ARG"
 if [ $? -ne 0 ]; then

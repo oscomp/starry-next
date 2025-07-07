@@ -2,7 +2,7 @@
 
 oscomp_binary: ax_root defconfig
 	@cp -r $(PWD)/bin/* /root/.cargo/bin
-	@make -C $(AX_ROOT) A=$(PWD) EXTRA_CONFIG=$(EXTRA_CONFIG) build
+	@make -C $(AX_ROOT) A=$(PWD) build
 	@if [ "$(ARCH)" = "riscv64" ]; then \
 		cp $(OUT_BIN) kernel-rv; \
 	else \

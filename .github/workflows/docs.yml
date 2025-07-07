@@ -23,11 +23,11 @@ jobs:
       with:
         shared-key: cargo-bin-cache
         cache-targets: false
-    - run: cargo install cargo-binutils
-    - run: ./scripts/get_deps.sh
     - uses: arceos-org/setup-musl@v1
       with:
         arch: x86_64
+    - name: Setup ArceOS
+      run: ./scripts/get_deps.sh
     - name: Build docs
       continue-on-error: ${{ github.ref != env.default-branch && github.event_name != 'pull_request' }}
       run: make doc
