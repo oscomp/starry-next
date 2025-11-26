@@ -1,6 +1,8 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oscomp/starry-next)
 # StarryOS
 
+NO LONGER MAINTAINED. You can check for the latest stable maintenance version in https://github.com/Starry-OS/StarryOS.
+
 [![CI](https://github.com/arceos-org/starry-next/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arceos-org/starry-next/actions/workflows/ci.yml)
 
 A monolithic kernel based on [ArceOS](https://github.com/arceos-org/arceos).
