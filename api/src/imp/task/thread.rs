@@ -54,7 +54,7 @@ pub fn sys_set_tid_address(clear_child_tid: usize) -> LinuxResult<isize> {
 
 #[cfg(target_arch = "x86_64")]
 pub fn sys_arch_prctl(
-    tf: &mut axhal::arch::TrapFrame,
+    tf: &mut axhal::context::TrapFrame,
     code: i32,
     addr: usize,
 ) -> LinuxResult<isize> {

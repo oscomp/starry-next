@@ -2,7 +2,7 @@ use core::{mem, time::Duration};
 
 use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
-use axhal::arch::TrapFrame;
+use axhal::context::TrapFrame;
 use axprocess::{Pid, Thread};
 use axsignal::{SignalInfo, SignalSet, SignalStack, Signo};
 use axtask::{TaskExtRef, current};

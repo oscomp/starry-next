@@ -8,7 +8,7 @@ use axhal::{
     mem::virt_to_phys,
     paging::{MappingFlags, PageSize},
 };
-use axmm::{AddrSpace, kernel_aspace};
+use axmm::AddrSpace;
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use xmas_elf::{ElfFile, program::SegmentData};
@@ -16,19 +16,20 @@ use xmas_elf::{ElfFile, program::SegmentData};
 /// Creates a new empty user address space.
 pub fn new_user_aspace_empty() -> AxResult<AddrSpace> {
     AddrSpace::new_empty(
-        VirtAddr::from_usize(axconfig::plat::USER_SPACE_BASE),
-        axconfig::plat::USER_SPACE_SIZE,
+        VirtAddr::from_usize(crate::config::USER_SPACE_BASE),
+        crate::config::USER_SPACE_SIZE,
     )
 }
 
 /// If the target architecture requires it, the kernel portion of the address
 /// space will be copied to the user address space.
-pub fn copy_from_kernel(aspace: &mut AddrSpace) -> AxResult {
-    if !cfg!(target_arch = "aarch64") && !cfg!(target_arch = "loongarch64") {
+pub fn copy_from_kernel(_aspace: &mut AddrSpace) -> AxResult {
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "loongarch64")))]
+    {
         // ARMv8 (aarch64) and LoongArch64 use separate page tables for user space
         // (aarch64: TTBR0_EL1, LoongArch64: PGDL), so there is no need to copy the
         // kernel portion to the user page table.
-        aspace.copy_mappings_from(&kernel_aspace().lock())?;
+        _aspace.copy_mappings_from(&axmm::kernel_aspace().lock())?;
     }
     Ok(())
 }
@@ -37,7 +38,7 @@ pub fn copy_from_kernel(aspace: &mut AddrSpace) -> AxResult {
 pub fn map_trampoline(aspace: &mut AddrSpace) -> AxResult {
     let signal_trampoline_paddr = virt_to_phys(axsignal::arch::signal_trampoline_address().into());
     aspace.map_linear(
-        axconfig::plat::SIGNAL_TRAMPOLINE.into(),
+        crate::config::SIGNAL_TRAMPOLINE.into(),
         signal_trampoline_paddr,
         PAGE_SIZE_4K,
         MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
@@ -54,11 +55,11 @@ pub fn map_trampoline(aspace: &mut AddrSpace) -> AxResult {
 ///
 /// # Returns
 /// - The entry point of the user app.
-fn map_elf(uspace: &mut AddrSpace, elf: &ElfFile) -> AxResult<(VirtAddr, [AuxvEntry; 16])> {
+fn map_elf(uspace: &mut AddrSpace, elf: &ElfFile) -> AxResult<(VirtAddr, [AuxvEntry; 17])> {
     let uspace_base = uspace.base().as_usize();
     let elf_parser = ELFParser::new(
         elf,
-        axconfig::plat::USER_INTERP_BASE,
+        crate::config::USER_INTERP_BASE,
         Some(uspace_base as isize),
         uspace_base,
     )
@@ -150,6 +151,7 @@ pub fn load_user_app(
             || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
             || interp_path == "/lib64/ld-linux-x86-64.so.2"
             || interp_path == "/lib/ld-linux-aarch64.so.1"
+            || interp_path == "/lib/ld-musl-x86_64.so.1"
         {
             // TODO: Use soft link
             interp_path = String::from("/musl/lib/libc.so");
@@ -166,8 +168,8 @@ pub fn load_user_app(
     // `ustack_start` -> `ustack_pointer`: It is the stack space that users actually read and write.
     // `ustack_pointer` -> `ustack_end`: It is the space that contains the arguments, environment variables and auxv passed to the app.
     //  When the app starts running, the stack pointer points to `ustack_pointer`.
-    let ustack_end = VirtAddr::from_usize(axconfig::plat::USER_STACK_TOP);
-    let ustack_size = axconfig::plat::USER_STACK_SIZE;
+    let ustack_end = VirtAddr::from_usize(crate::config::USER_STACK_TOP);
+    let ustack_size = crate::config::USER_STACK_SIZE;
     let ustack_start = ustack_end - ustack_size;
     debug!(
         "Mapping user stack: {:#x?} -> {:#x?}",
@@ -183,8 +185,8 @@ pub fn load_user_app(
         PageSize::Size4K,
     )?;
 
-    let heap_start = VirtAddr::from_usize(axconfig::plat::USER_HEAP_BASE);
-    let heap_size = axconfig::plat::USER_HEAP_SIZE;
+    let heap_start = VirtAddr::from_usize(crate::config::USER_HEAP_BASE);
+    let heap_size = crate::config::USER_HEAP_SIZE;
     uspace.map_alloc(
         heap_start,
         heap_size,

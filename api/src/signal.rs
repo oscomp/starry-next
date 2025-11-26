@@ -1,6 +1,6 @@
 use axerrno::{LinuxError, LinuxResult};
 use axhal::{
-    arch::TrapFrame,
+    context::TrapFrame,
     trap::{POST_TRAP, register_trap_handler},
 };
 use axprocess::{Process, ProcessGroup, Thread};

@@ -3,7 +3,7 @@ use core::{alloc::Layout, ffi::c_char, mem::transmute, ptr, slice, str};
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
-use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr, VirtAddrRange};
+use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
 use starry_core::mm::access_user_memory;
 
 fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> LinuxResult<()> {
@@ -15,10 +15,7 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
     let task = current();
     let mut aspace = task.task_ext().process_data().aspace.lock();
 
-    if !aspace.check_region_access(
-        VirtAddrRange::from_start_size(start, layout.size()),
-        access_flags,
-    ) {
+    if !aspace.can_access_range(start, layout.size(), access_flags) {
         return Err(LinuxError::EFAULT);
     }
 
@@ -60,10 +57,7 @@ fn check_null_terminated<T: PartialEq + Default>(
                 // allocated yet.
                 let task = current();
                 let aspace = task.task_ext().process_data().aspace.lock();
-                if !aspace.check_region_access(
-                    VirtAddrRange::from_start_size(page, PAGE_SIZE_4K),
-                    access_flags,
-                ) {
+                if !aspace.can_access_range(page, PAGE_SIZE_4K, access_flags) {
                     return Err(LinuxError::EFAULT);
                 }
 

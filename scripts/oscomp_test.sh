@@ -90,7 +90,7 @@ fi
 
 cp sdcard-$ARCH.img $AX_ROOT/disk.img
 
-ARG="AX_TESTCASE=oscomp ARCH=$ARCH EXTRA_CONFIG=../configs/$ARCH.toml BLK=y NET=y FEATURES=fp_simd,lwext4_rs SMP=4 ACCEL=n LOG=off"
+ARG="AX_TESTCASE=oscomp ARCH=$ARCH BLK=y NET=y FEATURES=lwext4_rs SMP=4 ACCEL=n LOG=off"
 
 echo -e "${GREEN_C}ARGS:${END_C} $ARG"
 if [ $? -ne 0 ]; then
@@ -100,13 +100,13 @@ fi
 function test_one() {
     local testcase_type=$1
     local actual="apps/oscomp/actual_$testcase_type.out"
-    RUN_TIME=$( { time { timeout --foreground $TIMEOUT make -C "$ROOT" $ARG run > "$actual" ; }; } )
+    RUN_TIME=$({ time { timeout --foreground $TIMEOUT make -C "$ROOT" $ARG run >"$actual"; }; })
     local res=$?
     if [ $res == 124 ]; then
         res=$S_TIMEOUT
     elif [ $res -ne 0 ]; then
         res=$S_FAILED
-    else 
+    else
         res=$S_PASS
     fi
     cat "$actual"
@@ -122,7 +122,7 @@ function test_one() {
         echo -e "${RED_C}actual output${END_C}:"
     else
         local judge_script="${ROOT}apps/oscomp/judge_${testcase_type}.py"
-        python3 $judge_script < "$actual"
+        python3 $judge_script <"$actual"
         if [ $? -ne 0 ]; then
             echo -e "${RED_C}failed!${END_C}"
             EXIT_STATUS=$S_FAILED
@@ -140,7 +140,7 @@ for type in "${testcases_type[@]}"; do
     # clean the testcase_list file
     rm -f $ROOT/apps/oscomp/testcase_list
     for t in "${test_list[@]}"; do
-        echo $t >> $ROOT/apps/oscomp/testcase_list
+        echo $t >>$ROOT/apps/oscomp/testcase_list
     done
     test_one "$type"
 done

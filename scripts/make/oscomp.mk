@@ -2,7 +2,7 @@
 
 oscomp_binary: ax_root defconfig
 	@cp -r $(PWD)/bin/* /root/.cargo/bin
-	@make -C $(AX_ROOT) A=$(PWD) EXTRA_CONFIG=$(EXTRA_CONFIG) build
+	@make -C $(AX_ROOT) A=$(PWD) build
 	@if [ "$(ARCH)" = "riscv64" ]; then \
 		cp $(OUT_BIN) kernel-rv; \
 	else \
@@ -32,6 +32,6 @@ endef
 
 oscomp_run: ax_root defconfig
 	$(call load_img)
-	$(MAKE) AX_TESTCASE=oscomp BLK=y NET=y FEATURES=fp_simd,lwext4_rs LOG=$(LOG) run
+	$(MAKE) AX_TESTCASE=oscomp BLK=y NET=y FEATURES=lwext4_rs LOG=$(LOG) run
 
 .PHONY: oscomp_binary oscomp_build oscomp_test oscomp_run

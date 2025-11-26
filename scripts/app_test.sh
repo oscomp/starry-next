@@ -24,7 +24,6 @@ if [ "$ARCH" != "x86_64" ] && [ "$ARCH" != "riscv64" ] && [ "$ARCH" != "aarch64"
     exit $S_FAILED
 fi
 
-
 function compare() {
     local actual=$1
     local expect=$2
@@ -34,13 +33,13 @@ function compare() {
     fi
     IFS=''
     while read -r line; do
-        local matched=$(grep -m1 -a "$line" < "$actual")
+        local matched=$(grep -m1 -a "$line" <"$actual")
         if [ -z "$matched" ]; then
             MSG="pattern \"${BLOD_C}$line${END_C}\" not matched!"
             unset IFS
             return $S_FAILED
         fi
-    done < "$expect"
+    done <"$expect"
     unset IFS
     return $S_PASS
 }
@@ -52,13 +51,13 @@ function run_and_compare() {
 
     echo -ne "    run with \"${BLOD_C}$args${END_C}\": "
 
-    make -C "$ROOT" AX_TESTCASE=$APP $args build > "$actual" 2>&1
+    make -C "$ROOT" AX_TESTCASE=$APP $args build >"$actual" 2>&1
     if [ $? -ne 0 ]; then
         return $S_BUILD_FAILED
     fi
 
     TIMEFORMAT='%3Rs'
-    RUN_TIME=$( { time { timeout --foreground $TIMEOUT make -C "$ROOT" AX_TESTCASE=$APP $args justrun > "$actual" 2>&1; }; } 2>&1 )
+    RUN_TIME=$({ time { timeout --foreground $TIMEOUT make -C "$ROOT" AX_TESTCASE=$APP $args justrun >"$actual" 2>&1; }; } 2>&1)
     local res=$?
     if [ $res == 124 ]; then
         return $S_TIMEOUT
@@ -74,13 +73,11 @@ function run_and_compare() {
     fi
 }
 
-
 function test_one() {
     local args=$1
     local expect="$APP_DIR/$2"
     local actual="$APP_DIR/actual.out"
-    local config_file=$(realpath --relative-to=$AX_ROOT "$ROOT/configs/$ARCH.toml")
-    args="$args ARCH=$ARCH ACCEL=n EXTRA_CONFIG=$config_file"
+    args="$args ARCH=$ARCH ACCEL=n"
     rm -f "$actual"
 
     MSG=

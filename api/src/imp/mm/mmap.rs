@@ -168,7 +168,7 @@ pub fn sys_munmap(addr: usize, length: usize) -> LinuxResult<isize> {
     let length = align_up_4k(length);
     let start_addr = VirtAddr::from(addr);
     aspace.unmap(start_addr, length)?;
-    axhal::arch::flush_tlb(None);
+    axhal::asm::flush_tlb(None);
     Ok(0)
 }
 

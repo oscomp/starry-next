@@ -24,10 +24,13 @@ linkme.workspace = true
 memory_addr.workspace = true
 spin.workspace = true
 
+cfg-if.workspace = true
 crate_interface = "0.1"
-kernel-elf-parser = "0.3"
+kernel-elf-parser = { git = "https://github.com/Azure-stars/kernel_elf_parser.git", rev = "f197de3" }
 numeric-enum-macro = "0.2"
 percpu = "0.2.0"
+weak-map = "0.1"
 xmas-elf = "0.9"
 
-weak-map = { git = "https://github.com/Starry-OS/weak-map.git" }
+[target.'cfg(not(any(target_arch = "aarch64", target_arch = "loongarch64")))'.dependencies]
+axmm = { workspace = true, features = ["copy-from"] }

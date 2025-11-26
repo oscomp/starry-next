@@ -1,6 +1,6 @@
 use alloc::{string::String, sync::Arc};
 use axfs::{CURRENT_DIR, CURRENT_DIR_PATH, api::set_current_dir};
-use axhal::arch::UspaceContext;
+use axhal::context::UspaceContext;
 use axprocess::{Pid, init_proc};
 use axsignal::Signo;
 use axsync::Mutex;
