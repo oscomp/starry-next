@@ -4,15 +4,20 @@ use core::{
 };
 
 use alloc::string::ToString;
+use alloc::sync::{Arc, Weak};
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
+use axsync::Mutex;
 use linux_raw_sys::general::{
-    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECTORY,
-    O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
+    __kernel_mode_t, AT_FDCWD, F_DUPFD, F_DUPFD_CLOEXEC, F_SETFL, O_APPEND, O_CREAT, O_DIRECT,
+    O_DIRECTORY, O_NONBLOCK, O_PATH, O_RDONLY, O_TRUNC, O_WRONLY,
 };
 
 use crate::{
-    file::{Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like},
+    file::{
+        Directory, FD_TABLE, File, FileLike, add_file_like, close_file_like, get_file_like,
+        page_cache_manager,
+    },
     path::handle_file_path,
     ptr::UserConstPtr,
 };
@@ -47,6 +52,9 @@ fn flags_to_options(flags: c_int, _mode: __kernel_mode_t) -> OpenOptions {
     if flags & O_DIRECTORY != 0 {
         options.directory(true);
     }
+    if flags & O_DIRECT != 0 {
+        options.direct(true);
+    }
     options
 }
 
@@ -75,13 +83,30 @@ pub fn sys_openat(
 
     if !opts.has_directory() {
         match dir.as_ref().map_or_else(
-            || axfs::fops::File::open(path, &opts),
-            |dir| dir.inner().open_file_at(path, &opts),
+            || axfs::fops::File::open(real_path.as_str(), &opts),
+            |dir| dir.inner().open_file_at(real_path.as_str(), &opts),
         ) {
-            Err(AxError::IsADirectory) => {}
-            r => {
-                let fd = File::new(r?, real_path.to_string()).add_to_fd_table()?;
+            Ok(axfile) => {
+                let path = real_path.to_string();
+                let fd = if opts.has_direct() {
+                    // 不经过 page cache
+                    let file = Arc::new(Mutex::new(axfile));
+                    File::new_file_direct(path, file).add_to_fd_table()?
+                } else {
+                    // 经过 page cache
+                    drop(axfile);
+                    let cache = {
+                        let manager = page_cache_manager();
+                        manager.open_page_cache(&path)
+                    };
+                    File::new_file_cached(path, cache).add_to_fd_table()?
+                };
                 return Ok(fd as _);
+            }
+            Err(AxError::IsADirectory) => {}
+            Err(e) => {
+                error!("sys_open at {} failed: {}", path, e);
+                return Err(LinuxError::EINVAL);
             }
         }
     }

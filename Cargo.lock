@@ -749,9 +749,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+checksum = "84b26c544d002229e640969970a2e74021aadf6e2f96372b9c58eff97de08eb3"
 
 [[package]]
 name = "heapless"
@@ -826,6 +826,15 @@ checksum = "51954c939251c5899b6e953aa0ed8903c5c0d1140fc7ce3a8fd60c931d694f6e"
 dependencies = [
  "cfg-if",
  "kernel_guard",
+]
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+dependencies = [
+ "spin",
 ]
 
 [[package]]
@@ -982,7 +991,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 [[package]]
 name = "page_table_entry"
 version = "0.5.3"
-source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=19ededd#19ededdb806ab3b22efb4880661790524fa421a5"
+source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch?rev=8bbd18a#8bbd18a15770c74734d2b2f69b69243ee53d6739"
 dependencies = [
  "aarch64-cpu",
  "bitflags 2.9.0",
@@ -993,7 +1002,7 @@ dependencies = [
 [[package]]
 name = "page_table_multiarch"
 version = "0.5.3"
-source = "git+https://github.com/Mivik/page_table_multiarch.git?rev=19ededd#19ededdb806ab3b22efb4880661790524fa421a5"
+source = "git+https://github.com/OrangeQi-CQ/page_table_multiarch?rev=8bbd18a#8bbd18a15770c74734d2b2f69b69243ee53d6739"
 dependencies = [
  "log",
  "memory_addr",
@@ -1232,6 +1241,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "starry"
 version = "0.1.0"
 dependencies = [
+ "axalloc",
  "axerrno",
  "axfeat",
  "axfs",
@@ -1254,6 +1264,7 @@ dependencies = [
 name = "starry-api"
 version = "0.1.0"
 dependencies = [
+ "axalloc",
  "axconfig",
  "axerrno",
  "axfeat",
@@ -1272,6 +1283,7 @@ dependencies = [
  "cfg-if",
  "ctor_bare",
  "flatten_objects",
+ "lazy_static",
  "linkme",
  "linux-raw-sys",
  "memory_addr",
